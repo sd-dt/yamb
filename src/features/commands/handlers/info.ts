@@ -10,11 +10,16 @@ import {
 } from '../../../actions/shared/entity-utils'
 
 function resolveActivityStatus (ctx: CommandContext): string {
-  if (ctx.teleportService.isHoverLocked()) return '滞空锁定'
-  if (ctx.teleportService.isLocked()) return '锁定'
-  const mode = ctx.ridingManager.getMode()
-  if (mode === 'player') return '骑乘'
-  if (mode === 'minecart') return '矿车'
+  const mode = ctx.botState.getMode()
+  if (mode === 'lock') {
+    return ctx.botState.isHoverLocked() ? '滞空锁定' : '锁定'
+  }
+  if (mode === 'brewing') return '酿造'
+  if (mode === 'ride') {
+    const ride = ctx.botState.getRideContext()
+    if (ride?.kind === 'minecart') return '矿车'
+    return '骑乘'
+  }
   return '空闲'
 }
 
@@ -116,7 +121,9 @@ function logMountDebug (ctx: CommandContext, username: string): void {
     askedBy: username,
     ridingMode: ctx.ridingManager.getMode(),
     ridingTarget: ctx.ridingManager.getTargetPlayer(),
-    locked: ctx.teleportService.isLocked(),
+    botMode: ctx.botState.getMode(),
+    locked: ctx.botState.isLocked(),
+    hoverLocked: ctx.botState.isHoverLocked(),
     bot: {
       username: bot.username,
       onGround: bot.entity.onGround,

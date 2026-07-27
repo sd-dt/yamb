@@ -11,6 +11,7 @@ import type ContainerRegistry from '../../container/registry'
 import type InventoryActions from '../../../actions/inventory'
 import type SystemMessageBuffer from '../system-buffer'
 import type CommandMessages from '../messages'
+import type BotState from '../../../state/bot-state'
 
 export interface CommandContext {
   mcBot: MinecraftBot
@@ -24,6 +25,7 @@ export interface CommandContext {
   systemBuffer: SystemMessageBuffer
   whitelist: Whitelist
   standby: StandbyManager
+  botState: BotState
   messages: CommandMessages
   interactionDistance: number
   approachDistance: number
