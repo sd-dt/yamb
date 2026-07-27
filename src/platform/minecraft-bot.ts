@@ -12,6 +12,8 @@ export default class MinecraftBot {
   private reconnectAttempts = 0
   private readonly maxReconnectAttempts = 10
   private readonly reconnectDelay = 5000
+  private readonly authReconnectDelay = 15000
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private messageQueue: MessageQueue | null = null
   private onSpawnCallbacks: Array<(bot: MinecraftBot) => void> = []
   private whisperCommand = '/msg'
@@ -110,15 +112,19 @@ export default class MinecraftBot {
       }
       console.error('[MC] Error:', err.message)
 
-      if (err.message.includes('fetch failed') || err.message.includes('Sign in failed')) {
+      if (this._isMicrosoftAuthError(err)) {
         console.error('[MC] 登录失败提示:')
         console.error('  - 微软账号 (MC_AUTH=microsoft) 不需要填写 MC_PASSWORD')
         console.error('  - 删除 mc-tokens 目录后重新运行，在终端按提示完成浏览器授权')
         console.error('  - 若仍失败，检查网络是否能访问 Microsoft 登录服务')
       }
 
-      if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED') {
-        this._handleReconnect('连接错误')
+      if (this._isTransientConnectError(err)) {
+        this.isReady = false
+        this._handleReconnect(
+          this._isMicrosoftAuthError(err) ? '微软登录失败' : '连接错误',
+          this._isMicrosoftAuthError(err)
+        )
       }
     })
 
@@ -141,6 +147,43 @@ export default class MinecraftBot {
       this.isReady = false
       this._handleReconnect('连接断开')
     })
+  }
+
+  private _isMicrosoftAuthError (err: NodeJS.ErrnoException): boolean {
+    const msg = (err.message || '').toLowerCase()
+    return msg.includes('fetch failed') ||
+      msg.includes('sign in failed') ||
+      msg.includes('microsoft') ||
+      msg.includes('xbox') ||
+      msg.includes('oauth') ||
+      msg.includes('msa')
+  }
+
+  private _isTransientConnectError (err: NodeJS.ErrnoException): boolean {
+    const code = err.code || ''
+    const msg = (err.message || '').toLowerCase()
+    if (
+      code === 'ECONNRESET' ||
+      code === 'ECONNREFUSED' ||
+      code === 'ETIMEDOUT' ||
+      code === 'ENOTFOUND' ||
+      code === 'EAI_AGAIN' ||
+      code === 'ECONNABORTED' ||
+      code === 'EHOSTUNREACH' ||
+      code === 'ENETUNREACH'
+    ) {
+      return true
+    }
+    return msg.includes('fetch failed') ||
+      msg.includes('sign in failed') ||
+      msg.includes('socket hang up') ||
+      msg.includes('network') ||
+      msg.includes('getaddrinfo') ||
+      msg.includes('timed out') ||
+      msg.includes('timeout') ||
+      msg.includes('econnreset') ||
+      msg.includes('econnrefused') ||
+      msg.includes('connect')
   }
 
   private _suppressProtocolErrors (): void {
@@ -244,19 +287,38 @@ export default class MinecraftBot {
     this._handleResourcePack('', uuid)
   }
 
-  private _handleReconnect (reason: string): void {
+  /** 供外部在未捕获的登录/网络异常时触发重连 */
+  scheduleReconnect (reason = '外部触发重连', authFailure = false): void {
+    this.isReady = false
+    this._handleReconnect(reason, authFailure)
+  }
+
+  private _handleReconnect (reason: string, authFailure = false): void {
+    // error + end 可能连续触发，避免重复排队
+    if (this.reconnectTimer) {
+      return
+    }
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.log(`[MC] 已达到最大重连次数 (${this.maxReconnectAttempts})，停止重连`)
       return
     }
 
     this.reconnectAttempts++
-    const delay = reason.includes('spam') ? 30000 : this.reconnectDelay
+    const delay = reason.includes('spam')
+      ? 30000
+      : (authFailure ? this.authReconnectDelay : this.reconnectDelay)
     console.log(`[MC] ${reason} - 第 ${this.reconnectAttempts}/${this.maxReconnectAttempts} 次重连，等待 ${delay / 1000} 秒...`)
 
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
       console.log('[MC] Reconnecting...')
-      this.create()
+      try {
+        this.create()
+      } catch (err) {
+        console.error('[MC] 重连创建失败:', (err as Error).message)
+        this._handleReconnect('重连创建失败', authFailure)
+      }
     }, delay)
   }
 

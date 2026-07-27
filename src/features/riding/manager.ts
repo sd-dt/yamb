@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer'
 import type { BotBehaviorConfig } from '../../types'
 import type MinecraftBot from '../../platform/minecraft-bot'
 import type PlayerInteractionService from '../../actions/player'
+import type BotState from '../../state/bot-state'
 import {
   clearVehicleState,
   hasActiveVehicle,
@@ -21,7 +22,7 @@ type Entity = NonNullable<Bot['entities'][string]>
 export default class RidingManager {
   private mcBot: MinecraftBot
   private playerInteraction: PlayerInteractionService
-  private isLocked: () => boolean = () => false
+  private botState: BotState | null = null
   private onBehaviorEnd: (() => void) | null = null
   private homeCommand: string
   private checkIntervalMs: number
@@ -34,6 +35,7 @@ export default class RidingManager {
   private notMountedStreak = 0
   private monitorTimer: ReturnType<typeof setInterval> | null = null
   private listenersAttached = false
+  private attachedBot: Bot | null = null
 
   constructor (
     mcBot: MinecraftBot,
@@ -46,8 +48,8 @@ export default class RidingManager {
     this.checkIntervalMs = botConfig.ridingCheckIntervalMs ?? 1500
   }
 
-  setIsLocked (isLocked: () => boolean): void {
-    this.isLocked = isLocked
+  setBotState (botState: BotState): void {
+    this.botState = botState
   }
 
   setOnBehaviorEnd (onBehaviorEnd: () => void): void {
@@ -66,9 +68,18 @@ export default class RidingManager {
     return this.targetPlayer
   }
 
+  private canEnterRide (): boolean {
+    if (!this.botState) return true
+    return !this.botState.isLocked() && !this.botState.isBrewing()
+  }
+
+  private isLocked (): boolean {
+    return this.botState?.isLocked() ?? false
+  }
+
   enterPlayerMode (playerName: string): void {
-    if (this.isLocked()) {
-      console.warn('[Riding] 已锁定，拒绝进入骑乘模式')
+    if (!this.canEnterRide()) {
+      console.warn(`[Riding] 当前模式 ${this.botState?.getMode()}，拒绝进入骑乘`)
       return
     }
     this.mode = 'player'
@@ -77,11 +88,12 @@ export default class RidingManager {
     this.remountSuppressedUntil = 0
     this.notMountedStreak = 0
     console.log(`[Riding] 进入骑乘模式 -> ${playerName}`)
+    void this.botState?.enterRide({ kind: 'player', target: playerName })
   }
 
   enterMinecartMode (): void {
-    if (this.isLocked()) {
-      console.warn('[Riding] 已锁定，拒绝进入矿车模式')
+    if (!this.canEnterRide()) {
+      console.warn(`[Riding] 当前模式 ${this.botState?.getMode()}，拒绝进入矿车`)
       return
     }
     this.mode = 'minecart'
@@ -90,9 +102,13 @@ export default class RidingManager {
     this.remountSuppressedUntil = 0
     this.notMountedStreak = 0
     console.log('[Riding] 进入矿车模式')
+    void this.botState?.enterRide({ kind: 'minecart' })
   }
 
-  clearMode (): void {
+  /**
+   * @param syncState 为 false 时只清本地骑乘（由 BotState 离开 ride 时调用，避免回环）
+   */
+  clearMode (syncState = true): void {
     if (this.mode === 'idle') return
     console.log(`[Riding] 退出 ${this.mode} 模式`)
     this.mode = 'idle'
@@ -101,6 +117,28 @@ export default class RidingManager {
     this.notMountedStreak = 0
     const bot = this.mcBot.bot
     if (bot) clearVehicleState(bot)
+    if (syncState && this.botState?.isRide()) {
+      void this.botState.enterIdle()
+    }
+  }
+
+  /** BotState 离开 ride 时调用：下马且不再回调 enterIdle */
+  async leaveForStateTransition (): Promise<void> {
+    if (this.mode === 'idle') return
+    this.dismountRequested = true
+    this.remountSuppressedUntil = Date.now() + 5000
+    try {
+      const bot = this.mcBot.bot
+      if (bot) {
+        await performDismount(bot, () => {
+          if (this.targetPlayer) return isStillRidingPlayer(bot, this.targetPlayer)
+          return isMountedOnMinecart(bot)
+        })
+      }
+    } finally {
+      this.clearMode(false)
+      this.dismountRequested = false
+    }
   }
 
   private isRemountSuppressed (): boolean {
@@ -129,19 +167,18 @@ export default class RidingManager {
     this.remountSuppressedUntil = Date.now() + 5000
 
     try {
-      // 离开云座后立刻清模式，避免 settle 期间 status 仍显示「骑乘」
       const ok = await performDismount(bot, isStillMounted)
       const stillOnSeat = hasActiveVehicle(bot) || isOnPluginCloudSeat(bot)
       const stillMounted = isStillMounted()
 
       if (!stillOnSeat && !stillMounted) {
-        this.clearMode()
+        this.clearMode(true)
         this.onBehaviorEnd?.()
         return { success: true, message: '已下马' }
       }
 
       if (ok) {
-        this.clearMode()
+        this.clearMode(true)
         this.onBehaviorEnd?.()
         return { success: true, message: '已下马' }
       }
@@ -159,7 +196,23 @@ export default class RidingManager {
 
   start (): void {
     const bot = this.mcBot.bot
-    if (!bot || this.listenersAttached) return
+    if (!bot) return
+
+    // 重连会换新 bot 实例，需要重新挂监听
+    if (this.attachedBot === bot && this.listenersAttached) return
+
+    if (this.monitorTimer) {
+      clearInterval(this.monitorTimer)
+      this.monitorTimer = null
+    }
+
+    // 掉线后骑乘关系已不存在，清掉内存模式
+    if (this.mode !== 'idle') {
+      console.log('[Riding] 重连后清除旧骑乘状态')
+      this.clearMode(true)
+    }
+
+    this.attachedBot = bot
     this.listenersAttached = true
 
     bot.on('dismount', () => {
@@ -194,7 +247,8 @@ export default class RidingManager {
       this.monitorTimer = null
     }
     this.listenersAttached = false
-    this.clearMode()
+    this.attachedBot = null
+    this.clearMode(true)
   }
 
   private isPhysicallyMounted (bot: Bot): boolean {
@@ -253,7 +307,7 @@ export default class RidingManager {
       // 锁定期间不重骑、不回家，仅退出骑乘模式并 AFK
       if (this.isLocked()) {
         console.log('[Riding] 已锁定，跳过重骑/回家')
-        this.clearMode()
+        this.clearMode(true)
         this.onBehaviorEnd?.()
         return
       }
@@ -265,7 +319,7 @@ export default class RidingManager {
       }
 
       if (this.mode === 'minecart') {
-        this.clearMode()
+        this.clearMode(true)
         this.onBehaviorEnd?.()
       }
     } finally {
@@ -276,7 +330,7 @@ export default class RidingManager {
   private async handlePlayerRemount (targetName: string, force = false): Promise<void> {
     const bot = this.mcBot.bot
     if (!bot) {
-      this.clearMode()
+      this.clearMode(true)
       return
     }
 
@@ -284,7 +338,7 @@ export default class RidingManager {
 
     if (this.isLocked()) {
       console.log('[Riding] 已锁定，跳过重骑/回家')
-      this.clearMode()
+      this.clearMode(true)
       this.onBehaviorEnd?.()
       return
     }
@@ -299,7 +353,7 @@ export default class RidingManager {
     if (!this.playerInteraction.isPlayerInRange(targetName)) {
       console.log(`[Riding] ${targetName} 超出寻路范围，执行 ${this.homeCommand}`)
       this.mcBot.chat(this.homeCommand)
-      this.clearMode()
+      this.clearMode(true)
       this.onBehaviorEnd?.()
       return
     }
@@ -315,7 +369,7 @@ export default class RidingManager {
 
     console.log(`[Riding] 重新骑乘失败，执行 ${this.homeCommand}`)
     this.mcBot.chat(this.homeCommand)
-    this.clearMode()
+    this.clearMode(true)
     this.onBehaviorEnd?.()
   }
 }

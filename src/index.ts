@@ -19,7 +19,8 @@ import CommandHandler from './features/commands/handler'
 import { registerChatListeners } from './features/commands/listeners'
 import BrewModule from './features/brew'
 import AstrbotServer from './api/server'
-import { sleep } from './platform/sleep'
+import BotState from './state/bot-state'
+import { isLockContext } from './state/types'
 import { resumeBotPhysics } from './actions/shared/entity-utils'
 
 async function main (): Promise<void> {
@@ -50,8 +51,9 @@ async function main (): Promise<void> {
   mcBot.setMessageQueue(messageQueue)
 
   const systemBuffer = new SystemMessageBuffer()
+  const botState = new BotState()
   const standbyManager = new StandbyManager(mcBot, config.bot)
-  const teleportService = new TeleportService(mcBot, config.teleport)
+  const teleportService = new TeleportService(mcBot, botState, config.teleport)
   const playerInteraction = new PlayerInteractionService(
     mcBot,
     config.bot.interactionDistance,
@@ -63,25 +65,25 @@ async function main (): Promise<void> {
     config.bot.approachDistance
   )
   const ridingManager = new RidingManager(mcBot, playerInteraction, config.bot)
-  const isLocked = (): boolean => teleportService.isLocked()
+  const isLocked = (): boolean => botState.isLocked()
 
-  // 空闲 / 骑乘 / 锁定互斥：锁定前若在骑乘则先下马
-  teleportService.setBeforeLock(async () => {
-    if (!ridingManager.isActive()) return
-    console.log('[Teleport] 锁定前下马（骑乘与锁定互斥）')
-    await ridingManager.dismount()
-    await sleep(400)
+  // 主模式互斥：离开 ride 时下马；离开 hover lock 时恢复物理
+  botState.setOnLeaveRide(async () => {
+    console.log('[BotState] 离开骑乘，执行下马')
+    await ridingManager.leaveForStateTransition()
   })
-  teleportService.setOnLock(() => standbyManager.scheduleAfk())
-  teleportService.setOnUnlock(({ wasHover }) => {
-    if (wasHover && mcBot.bot) {
+  botState.setOnLeaveLock((ctx) => {
+    if (isLockContext(ctx) && ctx.hover && mcBot.bot) {
       resumeBotPhysics(mcBot.bot)
     }
   })
 
+  teleportService.setOnLock(() => standbyManager.scheduleAfk())
+  teleportService.setOnUnlock(() => standbyManager.scheduleAfk())
+
   standbyManager.setRidingManager(ridingManager)
   standbyManager.setIsLocked(isLocked)
-  ridingManager.setIsLocked(isLocked)
+  ridingManager.setBotState(botState)
   ridingManager.setOnBehaviorEnd(() => standbyManager.scheduleAfk())
   const inventoryActions = new InventoryActions(mcBot)
   const gameApiService = new GameApiService(mcBot, whitelist, isLocked)
@@ -97,6 +99,7 @@ async function main (): Promise<void> {
     systemBuffer,
     whitelist,
     standbyManager,
+    botState,
     config.command,
     config.bot,
     config.adminList
@@ -113,6 +116,7 @@ async function main (): Promise<void> {
     registerChatListeners(mcBot, commandHandler, teleportHandler, systemBuffer)
     ridingManager.start()
     standbyManager.start()
+    void teleportService.restorePhysicalLockState()
     if (config.viewer.enabled && mcBot.bot) {
       startViewer(mcBot.bot, config.viewer)
     }
@@ -144,14 +148,50 @@ async function main (): Promise<void> {
   })
 
   process.on('uncaughtException', (err) => {
+    if (isTransientStartupError(err)) {
+      console.error('[Main] 可恢复异常（触发重连）:', err.message)
+      mcBot.scheduleReconnect('未捕获异常', isMicrosoftAuthMessage(err.message))
+      return
+    }
     console.error('[Main] Uncaught exception:', err)
     process.exit(1)
   })
 
   process.on('unhandledRejection', (reason, promise) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason))
+    if (isTransientStartupError(err)) {
+      console.error('[Main] 可恢复的未处理 rejection（触发重连）:', err.message)
+      mcBot.scheduleReconnect('未处理 rejection', isMicrosoftAuthMessage(err.message))
+      return
+    }
     console.error('[Main] Unhandled rejection at:', promise, 'reason:', reason)
     process.exit(1)
   })
+}
+
+function isMicrosoftAuthMessage (message: string): boolean {
+  const msg = (message || '').toLowerCase()
+  return msg.includes('fetch failed') ||
+    msg.includes('sign in failed') ||
+    msg.includes('microsoft') ||
+    msg.includes('xbox') ||
+    msg.includes('oauth')
+}
+
+function isTransientStartupError (err: Error): boolean {
+  const msg = (err.message || '').toLowerCase()
+  const code = (err as NodeJS.ErrnoException).code || ''
+  return code === 'ETIMEDOUT' ||
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN' ||
+    code === 'ECONNRESET' ||
+    code === 'ECONNREFUSED' ||
+    msg.includes('fetch failed') ||
+    msg.includes('sign in failed') ||
+    msg.includes('socket hang up') ||
+    msg.includes('network') ||
+    msg.includes('getaddrinfo') ||
+    msg.includes('timeout')
 }
 
 main().catch(err => {

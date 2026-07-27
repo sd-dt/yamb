@@ -10,6 +10,7 @@ import type RidingManager from '../riding/manager'
 import type ContainerRegistry from '../container/registry'
 import type InventoryActions from '../../actions/inventory'
 import type SystemMessageBuffer from './system-buffer'
+import type BotState from '../../state/bot-state'
 import type { CommandContext } from './handlers/types'
 import CommandMessages from './messages'
 import { sleep } from '../../platform/sleep'
@@ -52,6 +53,7 @@ export default class CommandHandler {
   private systemBuffer: SystemMessageBuffer
   private whitelist: Whitelist
   private standby: StandbyManager
+  private botState: BotState
   private messages: CommandMessages
   private prefix: string
   private adminList: Set<string>
@@ -75,6 +77,7 @@ export default class CommandHandler {
     systemBuffer: SystemMessageBuffer,
     whitelist: Whitelist,
     standby: StandbyManager,
+    botState: BotState,
     config: CommandConfig,
     botConfig: BotBehaviorConfig,
     adminList: string[]
@@ -90,6 +93,7 @@ export default class CommandHandler {
     this.systemBuffer = systemBuffer
     this.whitelist = whitelist
     this.standby = standby
+    this.botState = botState
     this.prefix = config.prefix || '#ybot'
     this.messages = new CommandMessages(config.messages, this.prefix)
     this.adminList = new Set(adminList)
@@ -156,6 +160,7 @@ export default class CommandHandler {
       systemBuffer: this.systemBuffer,
       whitelist: this.whitelist,
       standby: this.standby,
+      botState: this.botState,
       messages: this.messages,
       interactionDistance: this.interactionDistance,
       approachDistance: this.approachDistance,
@@ -202,7 +207,7 @@ export default class CommandHandler {
     console.log(`[Command:${source}] ${username} -> ${cmd} ${parts.join(' ')}`.trim())
 
     const ctx = this.buildContext()
-    const locked = this.teleportService.isLocked()
+    const locked = this.botState.isLocked()
 
     if (locked && LOCKED_BLOCKED_COMMANDS.has(cmd)) {
       await this.notifyLocked(username, source)
