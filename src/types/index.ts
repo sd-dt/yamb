@@ -1,7 +1,7 @@
 export interface MinecraftConfig {
   host: string
   port: number
-  username: string | undefined
+  username: string
   password: string | undefined
   auth: string
   profilesFolder: string
@@ -120,13 +120,14 @@ export interface BotBehaviorConfig {
   approachDistance: number
   forwardWaitMs: number
   ridingCheckIntervalMs: number
+<<<<<<< HEAD
   /** 普通掉线/踢出后重连等待（毫秒） */
+=======
+  homeMovementThreshold: number
+>>>>>>> 738ce30 (Feature: multi instances & presets, config convert into yaml.)
   reconnectDelayMs: number
-  /** 微软登录失败后重连等待（毫秒） */
   authReconnectDelayMs: number
-  /** spam 踢出后重连等待（毫秒） */
   spamReconnectDelayMs: number
-  /** 登录或收资源包后未 spawn 的超时（毫秒） */
   spawnTimeoutMs: number
 }
 
@@ -146,7 +147,23 @@ export interface MessageQueueConfig {
   delayMs: number
 }
 
+/** 进程级共享环境（来自 .env） */
+export interface SharedEnvConfig {
+  host: string
+  port: number
+  profilesFolder: string
+  version: string | false
+  checkTimeoutInterval: number
+  messageQueue: MessageQueueConfig
+  /** 各 bot AstrBot 可回落的共用密钥 */
+  apiKey: string | undefined
+}
+
+/**
+ * 单个 bot 运行时完整配置 = game 默认 + bots/*.yaml 覆盖
+ */
 export interface AppConfig {
+  id: string
   minecraft: MinecraftConfig
   astrbot: AstrbotConfig
   adminList: string[]
@@ -196,4 +213,3 @@ export interface QueueStatus {
   isLocked: boolean
   maxSize: number
 }
-

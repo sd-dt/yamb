@@ -1,0 +1,14 @@
+# 传送相关默认；waypoints / databaseFile 通常在 bot 实例中配置
+
+# 默认数据库路径（bot 未指定时会被 ./data/<botId>.db 覆盖）
+databaseFile: ./data/db.db
+# 接受传送
+tpacceptCommand: /tpaccept
+# 拉人到身边
+tpahereCommand: /tpahere
+# 命名传送点
+phomeCommand: /phome
+# phome 后等待再发 tpahere（毫秒）
+waypointDelayMs: 3000
+# 默认传送点列表（bot 可整段覆盖）
+waypoints: []

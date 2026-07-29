@@ -24,7 +24,8 @@
     "express": "^4.22.2",
     "mineflayer": "^4.37.1",
     "mineflayer-pathfinder": "^2.4.5",
-    "prismarine-viewer": "^1.33.0"
+    "prismarine-viewer": "^1.33.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

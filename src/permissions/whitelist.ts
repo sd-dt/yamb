@@ -46,4 +46,16 @@ export default class Whitelist {
     const row = this.db.prepare('SELECT COUNT(*) AS c FROM whitelist').get() as { c: number }
     return row.c
   }
+
+  /** 确保名单中的玩家在白名单内；缺失时以自身为 addedBy 写入 */
+  ensurePresent (gameNames: string[]): string[] {
+    const added: string[] = []
+    for (const name of gameNames) {
+      const gameName = name.trim()
+      if (!gameName || this.isAllowed(gameName)) continue
+      this.add(gameName, gameName)
+      added.push(gameName)
+    }
+    return added
+  }
 }

@@ -1,0 +1,10 @@
+# 命令渠道默认；可在 bot 实例中覆盖
+
+# 公屏命令前缀
+prefix: "#ybot"
+# 私聊发送指令
+whisperCommand: /msg
+# 是否允许公屏带前缀命令
+allowPublicCommands: false
+# 回复是否始终走私聊
+replyAlwaysWhisper: true

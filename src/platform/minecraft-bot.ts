@@ -69,7 +69,7 @@ export default class MinecraftBot {
     const options = {
       host: this.config.host,
       port: this.config.port,
-      username: this.config.username!,
+      username: this.config.username,
       auth: this.config.auth as 'microsoft' | 'mojang' | 'offline',
       profilesFolder: this.config.profilesFolder,
       checkTimeoutInterval: this.config.checkTimeoutInterval || 300000,
