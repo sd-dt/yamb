@@ -1796,6 +1796,11 @@ xxhash-wasm@^0.4.2:
   resolved "https://mirrors.huaweicloud.com/repository/npm/xxhash-wasm/-/xxhash-wasm-0.4.2.tgz#752398c131a4dd407b5132ba62ad372029be6f79"
   integrity sha512-/eyHVRJQCirEkSZ1agRSCwriMhwlyUcFkXD5TPVSLP+IPzjsqMVzZwdoczLp1SoQU0R3dxz1RpIK+4YNQbCVOA==
 
+yaml@^2.9.0:
+  version "2.9.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/yaml/-/yaml-2.9.0.tgz#78274afd93598a1dfdd6130df6a566defcbf9aa4"
+  integrity sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==
+
 yggdrasil@^1.4.0:
   version "1.8.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/yggdrasil/-/yggdrasil-1.8.0.tgz#4539cbd4da03dca4566fc2ca356128b27397ce05"

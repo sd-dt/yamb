@@ -1,0 +1,8 @@
+# prismarine-viewer 默认；各 bot 应使用不同 port
+
+enabled: false
+port: 3007
+# true=第一人称，false=第三人称跟随
+firstPerson: false
+# 渲染视距（区块）
+viewDistance: 6

@@ -6,3 +6,7 @@ data/
 *.zip
 .env
 .cursorignore
+
+config/bots/*
+!config/bots/example.yaml
+!config/bots/*.example.yaml

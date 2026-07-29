@@ -6,17 +6,16 @@
 
 ## 功能概览
 
-- **命令渠道**：私聊无前缀；公屏需在`command.json`配置前缀
-- **权限**：SQLite 白名单 + `.env` 管理员列表
+- **命令渠道**：私聊无前缀；公屏需在 `config/game/command.yaml`（或 bot 覆盖）配置前缀
+- **权限**：SQLite 白名单 + 各 bot 的 `adminList`
 - **传送**：自动接受传送、传送点、锁定
 - **交互**：骑乘玩家、上车、攻击、（WIP）亲亲
 - **物品**：容器登记、存取、丢弃、查背包
 - **待命**：自动回家、吃饭、闲置
+- **多实例**：同一进程可启用多个 `config/bots/*.yaml`
 - **AstrBot**（可选）：提供 QQ 机器人接口
 - **Viewer**（可选）： `prismarine-viewer` 网页可视化
 - （WIP）**酿造**：占位模块，待实现
-- （WIP）**多用户**：自由切换账号和对应配置。
-- （WIP）**bot集群**
 - （WIP）**哈气模式**
 - （WIP）**远程存取**
 - （WIP）**互动回应**
@@ -28,7 +27,7 @@
 ```bash
 yarn install
 cp .env.example .env
-# 编辑 .env 与 config/game/
+# 编辑 .env 与 config/bots/*.yaml、config/game/*.yaml
 yarn start
 ```
 
@@ -40,12 +39,16 @@ yarn dev
 
 ## 配置
 
+全部为 YAML，注释写在文件内。
+
 | 层级 | 位置 | 内容 |
 |------|------|------|
-| 部署/账号 | `.env` | MC 账号、服务器、`MC_ADMIN_LIST`、API 密钥 |
-| 游戏行为 | `config/game/*.json` | 前缀、待命、传送点、交互距离、viewer 等 |
+| 进程共享 | `.env` | 服务器、`MC_PROFILES_FOLDER`、版本、队列、共用 `API_KEY` |
+| 游戏默认 | `config/game/*.yaml` | 所有 bot 共用的默认行为 / 文案 |
+| bot 实例 | `config/bots/*.yaml` | 账号、管理员、传送点、`enabled`，以及覆盖 game 的字段 |
+| 配方 | `config/recipes/` | 酿酒配方（预留，暂空） |
 
-详见 [config/game/README.md](config/game/README.md)。
+启用某个 bot：在对应 yaml 设 `enabled: true`。未写出的字段继承 `config/game/`。
 
 ### Viewer
 
@@ -55,11 +58,11 @@ yarn dev
 yarn add canvas
 ```
 
-在 `config/game/viewer.json` 中设置 `"enabled": true`，启动后访问 `http://localhost:3007`（端口可配置）。
+在对应 bot 的 yaml（或 `config/game/viewer.yaml`）中设置 `enabled: true`，注意多 bot 时 port 不要冲突。
 
 ## 游戏内命令
 
-私聊无需前缀；公屏需 `{prefix}`（见 `config/game/command.json`）。`allowPublicCommands` 为 `false` 时仅私聊可用。
+私聊无需前缀；公屏需 `{prefix}`（见 `command.yaml` / bot 覆盖）。`allowPublicCommands` 为 `false` 时仅私聊可用。
 
 ### 白名单
 
@@ -91,7 +94,7 @@ yarn add canvas
 
 ## AstrBot 集成（可选）
 
-1. 在 `.env` 设置 `ASTRBOT_ENABLED=true` 与 `API_KEY`
+1. 在对应 bot 的 yaml 设 `astrbot.enabled: true` 与独立 `port`；`API_KEY` 可写在 `.env` 或 bot 的 `astrbot.apiKey`
 2. 将 `integrations/astrbot-plugin/` 安装到 AstrBot
 3. 配置插件中的 API 地址与密钥
 

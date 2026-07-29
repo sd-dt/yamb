@@ -2,12 +2,9 @@ import { DatabaseSync } from 'node:sqlite'
 import fs from 'fs'
 import path from 'path'
 
-let db: DatabaseSync | null = null
+const databases = new Map<string, DatabaseSync>()
 
-export function initDatabase (dbPath: string): DatabaseSync {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
-
-  db = new DatabaseSync(dbPath)
+function ensureSchema (db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS whitelist (
       game_name TEXT PRIMARY KEY,
@@ -26,50 +23,71 @@ export function initDatabase (dbPath: string): DatabaseSync {
       added_at  TEXT NOT NULL
     )
   `)
+}
 
+export function initDatabase (dbPath: string): DatabaseSync {
+  const existing = databases.get(dbPath)
+  if (existing) return existing
+
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
+  const db = new DatabaseSync(dbPath)
+  ensureSchema(db)
+  databases.set(dbPath, db)
   console.log(`[DB] SQLite ready: ${dbPath}`)
   return db
 }
 
-export function getDatabase (): DatabaseSync {
-  if (!db) throw new Error('Database not initialized')
-  return db
+export function getDatabase (dbPath?: string): DatabaseSync {
+  if (dbPath) {
+    const db = databases.get(dbPath)
+    if (!db) throw new Error(`Database not initialized: ${dbPath}`)
+    return db
+  }
+  if (databases.size === 1) return [...databases.values()][0]
+  if (databases.size === 0) throw new Error('Database not initialized')
+  throw new Error('Multiple databases open; pass dbPath to getDatabase()')
 }
 
-export function closeDatabase (): void {
-  if (db) {
+export function closeDatabase (dbPath?: string): void {
+  if (dbPath) {
+    const db = databases.get(dbPath)
+    if (!db) return
     db.close()
-    db = null
+    databases.delete(dbPath)
+    return
+  }
+  for (const [key, db] of databases) {
+    try { db.close() } catch { /* ignore */ }
+    databases.delete(key)
   }
 }
 
 /** 从旧版 whitelist.json 迁移数据（仅当表为空时） */
-export function migrateFromJson (jsonPath: string): void {
-  const database = getDatabase()
-  const count = database.prepare('SELECT COUNT(*) AS c FROM whitelist').get() as { c: number }
+export function migrateFromJson (db: DatabaseSync, jsonPath: string): void {
+  const count = db.prepare('SELECT COUNT(*) AS c FROM whitelist').get() as { c: number }
   if (count.c > 0) return
 
   if (!fs.existsSync(jsonPath)) return
 
   try {
     const data = JSON.parse(fs.readFileSync(jsonPath, 'utf-8')) as Record<string, { addedBy?: string; addedAt?: string }>
-    const insert = database.prepare(
+    const insert = db.prepare(
       'INSERT OR IGNORE INTO whitelist (game_name, added_by, added_at) VALUES (?, ?, ?)'
     )
 
-    database.exec('BEGIN')
+    db.exec('BEGIN')
     try {
       let migrated = 0
       for (const [name, info] of Object.entries(data)) {
         insert.run(name, info.addedBy || 'migration', info.addedAt || new Date().toISOString())
         migrated++
       }
-      database.exec('COMMIT')
+      db.exec('COMMIT')
       if (migrated > 0) {
         console.log(`[DB] Migrated ${migrated} entries from ${jsonPath}`)
       }
     } catch (err) {
-      database.exec('ROLLBACK')
+      db.exec('ROLLBACK')
       throw err
     }
   } catch (err) {

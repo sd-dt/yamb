@@ -1,0 +1,34 @@
+# 所有 bot 共用的行为默认值；可在 config/bots/<id>.yaml 中覆盖同名字段
+
+# 无互动超过此毫秒数后自动回家并 AFK
+idleTimeoutMs: 90000
+# 检查空闲状态的间隔（毫秒）
+idleCheckIntervalMs: 10000
+# 待命回家指令
+homeCommand: /home
+# AFK 指令
+afkCommand: /afk
+# 触发 AFK 前延迟（毫秒）
+afkDelayMs: 500
+# 执行回家后等待传送完成（毫秒）
+homeWaitMs: 3000
+# /home 后位移超过该格数才视为成功
+homeMovementThreshold: 30
+# 多条私聊回复间隔（毫秒）
+replyDelayMs: 500
+# 与目标交互最大距离（格）
+interactionDistance: 3
+# 寻路接近目标的最大距离（格）
+approachDistance: 10
+# forward 等待系统消息时长（毫秒）
+forwardWaitMs: 2000
+# 骑乘状态检测间隔（毫秒）
+ridingCheckIntervalMs: 1500
+# 普通掉线/踢出后重连等待（毫秒）
+reconnectDelayMs: 20000
+# 微软登录失败后重连等待（毫秒）
+authReconnectDelayMs: 15000
+# spam 踢出后重连等待（毫秒）
+spamReconnectDelayMs: 30000
+# 登录或资源包后未 spawn 超时（毫秒）
+spawnTimeoutMs: 30000

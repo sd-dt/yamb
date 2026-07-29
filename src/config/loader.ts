@@ -1,9 +1,24 @@
 import fs from 'fs'
 import path from 'path'
-import type { AppConfig, MessagesConfig, WaypointConfig } from '../types'
+import { parse as parseYaml } from 'yaml'
+import type {
+  AppConfig,
+  AstrbotConfig,
+  BotBehaviorConfig,
+  BrewConfig,
+  CommandConfig,
+  MessagesConfig,
+  SharedEnvConfig,
+  TeleportConfig,
+  ViewerConfig,
+  WaypointConfig
+} from '../types'
 
 const PROJECT_ROOT = path.join(__dirname, '..', '..')
-const GAME_CONFIG_DIR = path.join(PROJECT_ROOT, 'config', 'game')
+const CONFIG_DIR = path.join(PROJECT_ROOT, 'config')
+const GAME_CONFIG_DIR = path.join(CONFIG_DIR, 'game')
+const BOTS_CONFIG_DIR = path.join(CONFIG_DIR, 'bots')
+const RECIPES_CONFIG_DIR = path.join(CONFIG_DIR, 'recipes')
 
 function envBool (value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined || value === '') return defaultValue
@@ -15,119 +30,54 @@ function envInt (value: string | undefined, defaultValue: number): number {
   return parseInt(value, 10)
 }
 
-function stripJsonComments (text: string): string {
-  let result = ''
-  let i = 0
-  let inString = false
-  let escape = false
-
-  while (i < text.length) {
-    const char = text[i]
-    const next = text[i + 1]
-
-    if (inString) {
-      result += char
-      if (escape) {
-        escape = false
-      } else if (char === '\\') {
-        escape = true
-      } else if (char === '"') {
-        inString = false
-      }
-      i++
-      continue
-    }
-
-    if (char === '"') {
-      inString = true
-      result += char
-      i++
-      continue
-    }
-
-    if (char === '/' && next === '/') {
-      while (i < text.length && text[i] !== '\n') i++
-      continue
-    }
-
-    if (char === '/' && next === '*') {
-      i += 2
-      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++
-      i += 2
-      continue
-    }
-
-    result += char
-    i++
-  }
-
-  return result
+function resolvePath (relativePath: string): string {
+  if (path.isAbsolute(relativePath)) return relativePath
+  return path.join(PROJECT_ROOT, relativePath)
 }
 
-function readJson<T> (filePath: string): T | null {
+function readYaml<T> (filePath: string): T | null {
   try {
     if (!fs.existsSync(filePath)) {
       console.warn(`[Config] File not found: ${filePath}`)
       return null
     }
     const raw = fs.readFileSync(filePath, 'utf-8')
-    return JSON.parse(stripJsonComments(raw)) as T
+    return parseYaml(raw) as T
   } catch (err) {
     console.warn(`[Config] Failed to read ${filePath}:`, (err as Error).message)
     return null
   }
 }
 
-function resolvePath (relativePath: string): string {
-  if (path.isAbsolute(relativePath)) return relativePath
-  return path.join(PROJECT_ROOT, relativePath)
-}
-
-function parseAdminList (value: string | undefined): string[] {
-  if (!value?.trim()) return []
-  return value.split(',').map(name => name.trim()).filter(Boolean)
-}
-
-function loadMessagesConfig (): MessagesConfig {
-  const messagesPath = path.join(GAME_CONFIG_DIR, 'messages.json')
-  const messages = readJson<MessagesConfig>(messagesPath)
-  if (!messages) {
-    console.error('[Config] Error: config/game/messages.json is required')
-    process.exit(1)
+/** 深层合并：数组整段替换；对象递归；undefined 不覆盖 */
+function deepMerge<T> (base: T, override: unknown): T {
+  if (override === undefined || override === null) return base
+  if (Array.isArray(override)) return override as T
+  if (typeof override !== 'object' || typeof base !== 'object' || base === null || Array.isArray(base)) {
+    return override as T
   }
-  return messages
-}
 
-function loadEnvConfig (): Pick<AppConfig, 'minecraft' | 'astrbot' | 'messageQueue' | 'adminList'> {
-  const mcVersion = process.env.MC_VERSION
-  const password = process.env.MC_PASSWORD?.trim()
-  return {
-    minecraft: {
-      host: process.env.MC_HOST || 'mc.zenoxs.cn',
-      port: envInt(process.env.MC_PORT, 25565),
-      username: process.env.MC_USERNAME,
-      password: password || undefined,
-      auth: process.env.MC_AUTH || 'microsoft',
-      profilesFolder: resolvePath(process.env.MC_PROFILES_FOLDER || './mc-tokens'),
-      version: !mcVersion || mcVersion === 'false' ? false : mcVersion,
-      checkTimeoutInterval: envInt(process.env.MC_CHECK_TIMEOUT, 300000)
-    },
-    astrbot: {
-      enabled: envBool(process.env.ASTRBOT_ENABLED, false),
-      port: envInt(process.env.API_PORT, 15100),
-      apiKey: process.env.API_KEY
-    },
-    messageQueue: {
-      maxSize: envInt(process.env.QUEUE_MAX_SIZE, 100),
-      delayMs: envInt(process.env.QUEUE_DELAY_MS, 1000)
-    },
-    adminList: parseAdminList(process.env.MC_ADMIN_LIST)
+  const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+  for (const [key, value] of Object.entries(override as Record<string, unknown>)) {
+    if (value === undefined) continue
+    if (
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      typeof result[key] === 'object' &&
+      result[key] !== null &&
+      !Array.isArray(result[key])
+    ) {
+      result[key] = deepMerge(result[key], value)
+    } else {
+      result[key] = value
+    }
   }
+  return result as T
 }
 
 function normalizeWaypoints (raw: unknown): WaypointConfig[] {
   if (!Array.isArray(raw)) return []
-
   const waypoints: WaypointConfig[] = []
   for (const item of raw) {
     if (typeof item === 'string') {
@@ -144,42 +94,86 @@ function normalizeWaypoints (raw: unknown): WaypointConfig[] {
   return waypoints
 }
 
-function loadFeatureConfig (): Pick<AppConfig, 'command' | 'teleport' | 'bot' | 'viewer' | 'brew'> {
-  const commandPath = path.join(GAME_CONFIG_DIR, 'command.json')
-  const teleportPath = path.join(GAME_CONFIG_DIR, 'teleport.json')
-  const botPath = path.join(GAME_CONFIG_DIR, 'bot.json')
-  const viewerPath = path.join(GAME_CONFIG_DIR, 'viewer.json')
-  const brewPath = path.join(GAME_CONFIG_DIR, 'brew.json')
+function normalizeAdminList (raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(x => String(x).trim()).filter(Boolean)
+}
 
-  const commandConfig = readJson<Partial<AppConfig['command']>>(commandPath) ?? {}
-  const teleportConfig = readJson<Partial<AppConfig['teleport']>>(teleportPath) ?? {}
-  const botConfig = readJson<Partial<AppConfig['bot']>>(botPath) ?? {}
-  const viewerConfig = readJson<Partial<AppConfig['viewer']>>(viewerPath) ?? {}
-  const brewConfig = readJson<Partial<AppConfig['brew']>>(brewPath) ?? {}
-  const messages = loadMessagesConfig()
+interface GameDefaults {
+  command: Omit<CommandConfig, 'messages'> & { messages?: MessagesConfig }
+  teleport: TeleportConfig
+  bot: BotBehaviorConfig
+  viewer: ViewerConfig
+  brew: BrewConfig
+  messages: MessagesConfig
+}
 
-  console.log(`[Config] Game config dir: ${GAME_CONFIG_DIR}`)
-  console.log(`[Config] command.json -> prefix="${commandConfig.prefix ?? '(default #ybot)'}"`)
+interface BotFileConfig {
+  id?: string
+  enabled?: boolean
+  account?: {
+    username?: string
+    password?: string
+    auth?: string
+    /** 相对共享 profilesFolder 的子目录 */
+    profilesSubdir?: string
+  }
+  adminList?: string[]
+  astrbot?: Partial<AstrbotConfig>
+  command?: Partial<CommandConfig>
+  teleport?: Partial<TeleportConfig>
+  bot?: Partial<BotBehaviorConfig>
+  viewer?: Partial<ViewerConfig>
+  brew?: Partial<BrewConfig>
+  messages?: Partial<MessagesConfig>
+}
 
-  const prefix = commandConfig.prefix || '#ybot'
+export function loadSharedEnv (): SharedEnvConfig {
+  const mcVersion = process.env.MC_VERSION
+  return {
+    host: process.env.MC_HOST || 'localhost',
+    port: envInt(process.env.MC_PORT, 25565),
+    profilesFolder: resolvePath(process.env.MC_PROFILES_FOLDER || './mc-tokens'),
+    version: !mcVersion || mcVersion === 'false' ? false : mcVersion,
+    checkTimeoutInterval: envInt(process.env.MC_CHECK_TIMEOUT, 300000),
+    messageQueue: {
+      maxSize: envInt(process.env.QUEUE_MAX_SIZE, 100),
+      delayMs: envInt(process.env.QUEUE_DELAY_MS, 1000)
+    },
+    apiKey: process.env.API_KEY || undefined
+  }
+}
+
+function loadGameDefaults (): GameDefaults {
+  const commandRaw = readYaml<Partial<CommandConfig>>(path.join(GAME_CONFIG_DIR, 'command.yaml')) ?? {}
+  const teleportRaw = readYaml<Partial<TeleportConfig>>(path.join(GAME_CONFIG_DIR, 'teleport.yaml')) ?? {}
+  const botRaw = readYaml<Partial<BotBehaviorConfig>>(path.join(GAME_CONFIG_DIR, 'bot.yaml')) ?? {}
+  const viewerRaw = readYaml<Partial<ViewerConfig>>(path.join(GAME_CONFIG_DIR, 'viewer.yaml')) ?? {}
+  const brewRaw = readYaml<Partial<BrewConfig>>(path.join(GAME_CONFIG_DIR, 'brew.yaml')) ?? {}
+  const messages = readYaml<MessagesConfig>(path.join(GAME_CONFIG_DIR, 'messages.yaml'))
+  if (!messages) {
+    console.error('[Config] Error: config/game/messages.yaml is required')
+    process.exit(1)
+  }
 
   return {
+    messages,
     command: {
-      prefix,
-      whisperCommand: commandConfig.whisperCommand || '/msg',
-      allowPublicCommands: commandConfig.allowPublicCommands ?? false,
-      replyAlwaysWhisper: commandConfig.replyAlwaysWhisper ?? true,
-      messages
+      prefix: commandRaw.prefix || '#ybot',
+      whisperCommand: commandRaw.whisperCommand || '/msg',
+      allowPublicCommands: commandRaw.allowPublicCommands ?? false,
+      replyAlwaysWhisper: commandRaw.replyAlwaysWhisper ?? true
     },
     teleport: {
-      databaseFile: teleportConfig.databaseFile || './data/db.db',
-      tpacceptCommand: teleportConfig.tpacceptCommand || '/tpaccept',
-      tpahereCommand: teleportConfig.tpahereCommand || '/tpahere',
-      phomeCommand: teleportConfig.phomeCommand || '/phome',
-      waypoints: normalizeWaypoints(teleportConfig.waypoints),
-      waypointDelayMs: teleportConfig.waypointDelayMs ?? 3000
+      databaseFile: teleportRaw.databaseFile || './data/db.db',
+      tpacceptCommand: teleportRaw.tpacceptCommand || '/tpaccept',
+      tpahereCommand: teleportRaw.tpahereCommand || '/tpahere',
+      phomeCommand: teleportRaw.phomeCommand || '/phome',
+      waypoints: normalizeWaypoints(teleportRaw.waypoints),
+      waypointDelayMs: teleportRaw.waypointDelayMs ?? 3000
     },
     bot: {
+<<<<<<< HEAD
       idleTimeoutMs: botConfig.idleTimeoutMs ?? 90000,
       idleCheckIntervalMs: botConfig.idleCheckIntervalMs ?? 10000,
       homeCommand: botConfig.homeCommand || '/home',
@@ -195,31 +189,178 @@ function loadFeatureConfig (): Pick<AppConfig, 'command' | 'teleport' | 'bot' | 
       authReconnectDelayMs: botConfig.authReconnectDelayMs ?? 15000,
       spamReconnectDelayMs: botConfig.spamReconnectDelayMs ?? 30000,
       spawnTimeoutMs: botConfig.spawnTimeoutMs ?? 30000
+=======
+      idleTimeoutMs: botRaw.idleTimeoutMs ?? 90000,
+      idleCheckIntervalMs: botRaw.idleCheckIntervalMs ?? 10000,
+      homeCommand: botRaw.homeCommand || '/home',
+      afkCommand: botRaw.afkCommand || '/afk',
+      afkDelayMs: botRaw.afkDelayMs ?? 500,
+      homeWaitMs: botRaw.homeWaitMs ?? 3000,
+      replyDelayMs: botRaw.replyDelayMs ?? 500,
+      interactionDistance: botRaw.interactionDistance ?? 3,
+      approachDistance: botRaw.approachDistance ?? 10,
+      forwardWaitMs: botRaw.forwardWaitMs ?? 2000,
+      ridingCheckIntervalMs: botRaw.ridingCheckIntervalMs ?? 1500,
+      homeMovementThreshold: botRaw.homeMovementThreshold ?? 30,
+      reconnectDelayMs: botRaw.reconnectDelayMs ?? 20000,
+      authReconnectDelayMs: botRaw.authReconnectDelayMs ?? 15000,
+      spamReconnectDelayMs: botRaw.spamReconnectDelayMs ?? 30000,
+      spawnTimeoutMs: botRaw.spawnTimeoutMs ?? 30000
+>>>>>>> 738ce30 (Feature: multi instances & presets, config convert into yaml.)
     },
     viewer: {
-      enabled: viewerConfig.enabled ?? false,
-      port: viewerConfig.port ?? 3007,
-      firstPerson: viewerConfig.firstPerson ?? false,
-      viewDistance: viewerConfig.viewDistance ?? 6
+      enabled: viewerRaw.enabled ?? false,
+      port: viewerRaw.port ?? 3007,
+      firstPerson: viewerRaw.firstPerson ?? false,
+      viewDistance: viewerRaw.viewDistance ?? 6
     },
     brew: {
-      enabled: brewConfig.enabled ?? false
+      enabled: brewRaw.enabled ?? false
     }
   }
 }
 
-export function loadConfig (): AppConfig {
-  return { ...loadEnvConfig(), ...loadFeatureConfig() }
+function listBotFiles (): string[] {
+  if (!fs.existsSync(BOTS_CONFIG_DIR)) return []
+  return fs.readdirSync(BOTS_CONFIG_DIR)
+    .filter(name => name.endsWith('.yaml') || name.endsWith('.yml'))
+    .map(name => path.join(BOTS_CONFIG_DIR, name))
+    .sort()
 }
 
-export function validateConfig (config: AppConfig): void {
-  if (!config.minecraft.username) {
-    console.error('[Config] Error: MC_USERNAME is required in .env')
+function buildBotConfig (
+  shared: SharedEnvConfig,
+  game: GameDefaults,
+  filePath: string,
+  raw: BotFileConfig
+): AppConfig {
+  const fileId = path.basename(filePath).replace(/\.(yaml|yml)$/i, '')
+  const id = (raw.id || fileId).trim()
+  if (!id) {
+    console.error(`[Config] Bot file missing id: ${filePath}`)
     process.exit(1)
   }
 
+  const username = raw.account?.username?.trim()
+  if (!username) {
+    console.error(`[Config] Bot "${id}" missing account.username`)
+    process.exit(1)
+  }
+
+  const password = raw.account?.password?.trim() || undefined
+  const auth = raw.account?.auth || 'microsoft'
+  const subdir = raw.account?.profilesSubdir?.trim()
+  const profilesFolder = subdir
+    ? path.join(shared.profilesFolder, subdir)
+    : shared.profilesFolder
+
+  const commandMerged = deepMerge(game.command, raw.command ?? {})
+  const messagesMerged = deepMerge(game.messages, raw.messages ?? {})
+  const teleportOverride: Partial<TeleportConfig> = { ...(raw.teleport ?? {}) }
+  if (raw.teleport?.waypoints !== undefined) {
+    teleportOverride.waypoints = normalizeWaypoints(raw.teleport.waypoints)
+  }
+  if (teleportOverride.databaseFile === undefined) {
+    teleportOverride.databaseFile = `./data/${id}.db`
+  }
+  const teleportMerged = deepMerge(game.teleport, teleportOverride)
+  const botMerged = deepMerge(game.bot, raw.bot ?? {})
+  const viewerMerged = deepMerge(game.viewer, raw.viewer ?? {})
+  const brewMerged = deepMerge(game.brew, raw.brew ?? {})
+
+  const astrbotEnabled = raw.astrbot?.enabled ?? false
+  const astrbot: AstrbotConfig = {
+    enabled: astrbotEnabled,
+    port: raw.astrbot?.port ?? 15100,
+    apiKey: raw.astrbot?.apiKey ?? shared.apiKey
+  }
+
+  return {
+    id,
+    minecraft: {
+      host: shared.host,
+      port: shared.port,
+      username,
+      password,
+      auth,
+      profilesFolder,
+      version: shared.version,
+      checkTimeoutInterval: shared.checkTimeoutInterval
+    },
+    astrbot,
+    adminList: normalizeAdminList(raw.adminList),
+    command: {
+      ...commandMerged,
+      messages: messagesMerged
+    },
+    teleport: {
+      ...teleportMerged,
+      waypoints: normalizeWaypoints(teleportMerged.waypoints)
+    },
+    bot: botMerged,
+    viewer: viewerMerged,
+    brew: brewMerged,
+    messageQueue: { ...shared.messageQueue }
+  }
+}
+
+/**
+ * 加载所有 enabled=true 的 bot 实例配置。
+ * game/*.yaml 为默认；bots/*.yaml 可覆盖对应段落。
+ */
+export function loadEnabledBotConfigs (): AppConfig[] {
+  const shared = loadSharedEnv()
+  const game = loadGameDefaults()
+
+  console.log(`[Config] game dir: ${GAME_CONFIG_DIR}`)
+  console.log(`[Config] bots dir: ${BOTS_CONFIG_DIR}`)
+  console.log(`[Config] recipes dir: ${RECIPES_CONFIG_DIR}`)
+
+  const files = listBotFiles()
+  if (files.length === 0) {
+    console.error('[Config] Error: no bot yaml found in config/bots/')
+    process.exit(1)
+  }
+
+  const configs: AppConfig[] = []
+  for (const filePath of files) {
+    const raw = readYaml<BotFileConfig>(filePath)
+    if (!raw) continue
+    if (raw.enabled !== true) {
+      const name = raw.id || path.basename(filePath)
+      console.log(`[Config] Skip disabled bot: ${name}`)
+      continue
+    }
+    const config = buildBotConfig(shared, game, filePath, raw)
+    validateBotConfig(config)
+    configs.push(config)
+    console.log(`[Config] Enabled bot: ${config.id} (${config.minecraft.username})`)
+  }
+
+  if (configs.length === 0) {
+    console.error('[Config] Error: no enabled bots (set enabled: true in config/bots/*.yaml)')
+    process.exit(1)
+  }
+
+  const ids = new Set<string>()
+  for (const c of configs) {
+    if (ids.has(c.id)) {
+      console.error(`[Config] Error: duplicate bot id "${c.id}"`)
+      process.exit(1)
+    }
+    ids.add(c.id)
+  }
+
+  return configs
+}
+
+export function validateBotConfig (config: AppConfig): void {
+  if (!config.minecraft.username) {
+    console.error(`[Config] Error: bot "${config.id}" missing username`)
+    process.exit(1)
+  }
   if (config.astrbot.enabled && !config.astrbot.apiKey) {
-    console.error('[Config] Error: API_KEY is required in .env when ASTRBOT_ENABLED=true')
+    console.error(`[Config] Error: bot "${config.id}" AstrBot enabled but no apiKey (set astrbot.apiKey or API_KEY in .env)`)
     process.exit(1)
   }
 }
@@ -228,4 +369,22 @@ export function resolveDataPath (relativePath: string): string {
   return path.join(PROJECT_ROOT, relativePath)
 }
 
-export { PROJECT_ROOT, GAME_CONFIG_DIR }
+/** @deprecated 使用 loadEnabledBotConfigs */
+export function loadConfig (): AppConfig {
+  const configs = loadEnabledBotConfigs()
+  return configs[0]
+}
+
+export function validateConfig (config: AppConfig): void {
+  validateBotConfig(config)
+}
+
+export {
+  PROJECT_ROOT,
+  CONFIG_DIR,
+  GAME_CONFIG_DIR,
+  BOTS_CONFIG_DIR,
+  RECIPES_CONFIG_DIR,
+  deepMerge,
+  envBool
+}

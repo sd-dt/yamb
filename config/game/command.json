@@ -1,6 +1,0 @@
-{
-  "prefix": "fuck",
-  "whisperCommand": "/msg",
-  "allowPublicCommands": false,
-  "replyAlwaysWhisper": true
-}
