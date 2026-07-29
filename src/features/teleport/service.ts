@@ -12,6 +12,7 @@ export default class TeleportService {
   private phomeCommand: string
   private waypointByAlias: Map<string, string>
   private waypointDelayMs: number
+  private waypointsHelp: string
   private onLock: (() => void) | null = null
   private onUnlock: ((info: { wasHover: boolean }) => void) | null = null
 
@@ -25,6 +26,7 @@ export default class TeleportService {
       config.waypoints.map(w => [w.alias, w.id])
     )
     this.waypointDelayMs = config.waypointDelayMs ?? 3000
+    this.waypointsHelp = config.waypointsHelp?.trim() || ''
   }
 
   setOnLock (onLock: () => void): void {
@@ -119,6 +121,11 @@ export default class TeleportService {
 
   listWaypointAliases (): string[] {
     return [...this.waypointByAlias.keys()].sort()
+  }
+
+  /** help / 用法提示用的固定文案；未配置时回落为「无」 */
+  getWaypointsHelp (): string {
+    return this.waypointsHelp || '无'
   }
 
   listWaypoints (): WaypointConfig[] {

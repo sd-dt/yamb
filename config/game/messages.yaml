@@ -67,17 +67,3 @@ takeError: "失败: {message}"
 dropUsage: "用法: drop <物品> [数量]"
 dropSuccess: "{message}"
 dropError: "失败: {message}"
-helpLines:
-  - 游戏内命令帮助
-  - 私聊命令无需前缀；公屏需 {prefix}（若已开启）
-  - phome <传送点> — 传送 ({waypoints})
-  - mount [游戏名] / unmount — 骑乘/下马
-  - cart — 登上最近矿车
-  - attack [游戏名] — 攻击目标
-  - store/take <容器> <物品> [数量] — 存取物品
-  - drop <物品> [数量] — 丢弃物品
-  - lock / lock hover / unlock — 锁定 / 滞空锁定 / 解锁
-  - container add|list|info|remove — 容器管理
-  - status — 查看状态
-  - inv — 查看背包 (管理员)
-  - forward / say / add / remove — 管理员

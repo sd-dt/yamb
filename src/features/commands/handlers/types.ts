@@ -30,6 +30,7 @@ export interface CommandContext {
   interactionDistance: number
   approachDistance: number
   forwardWaitMs: number
+  statusMountDebugLog: boolean
   reply: (username: string, message: string, source: CommandSource) => Promise<void>
   isAdmin: (username: string) => boolean
   waypointHint: () => string

@@ -63,6 +63,7 @@ export default class CommandHandler {
   private forwardWaitMs: number
   private interactionDistance: number
   private approachDistance: number
+  private statusMountDebugLog: boolean
   private _lastCmd?: { key: string; time: number }
 
   constructor (
@@ -103,6 +104,7 @@ export default class CommandHandler {
     this.forwardWaitMs = botConfig.forwardWaitMs
     this.interactionDistance = botConfig.interactionDistance
     this.approachDistance = botConfig.approachDistance
+    this.statusMountDebugLog = botConfig.statusMountDebugLog
   }
 
   getCommandMessages (): CommandMessages {
@@ -138,8 +140,7 @@ export default class CommandHandler {
   }
 
   private waypointHint (): string {
-    const aliases = this.teleportService.listWaypointAliases()
-    return aliases.length > 0 ? aliases.join(', ') : '无'
+    return this.teleportService.getWaypointsHelp()
   }
 
   private async notifyLocked (username: string, source: CommandSource): Promise<void> {
@@ -165,6 +166,7 @@ export default class CommandHandler {
       interactionDistance: this.interactionDistance,
       approachDistance: this.approachDistance,
       forwardWaitMs: this.forwardWaitMs,
+      statusMountDebugLog: this.statusMountDebugLog,
       reply: this.reply.bind(this),
       isAdmin: this.isAdmin.bind(this),
       waypointHint: this.waypointHint.bind(this),
