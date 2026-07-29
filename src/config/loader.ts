@@ -94,10 +94,16 @@ function normalizeWaypoints (raw: unknown): WaypointConfig[] {
   return waypoints
 }
 
+function normalizeHelpLines (raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(line => String(line)).filter(line => line.trim().length > 0)
+}
+
 function normalizeAdminList (raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
   return raw.map(x => String(x).trim()).filter(Boolean)
 }
+
 
 interface GameDefaults {
   command: Omit<CommandConfig, 'messages'> & { messages?: MessagesConfig }
@@ -126,6 +132,8 @@ interface BotFileConfig {
   viewer?: Partial<ViewerConfig>
   brew?: Partial<BrewConfig>
   messages?: Partial<MessagesConfig>
+  /** help 回复行（按 bot 分工配置；不再使用 game/messages 默认） */
+  helpLines?: string[]
 }
 
 export function loadSharedEnv (): SharedEnvConfig {
@@ -155,6 +163,8 @@ function loadGameDefaults (): GameDefaults {
     console.error('[Config] Error: config/game/messages.yaml is required')
     process.exit(1)
   }
+  // helpLines 仅由各 bot 配置提供
+  delete messages.helpLines
 
   return {
     messages,
@@ -170,26 +180,10 @@ function loadGameDefaults (): GameDefaults {
       tpahereCommand: teleportRaw.tpahereCommand || '/tpahere',
       phomeCommand: teleportRaw.phomeCommand || '/phome',
       waypoints: normalizeWaypoints(teleportRaw.waypoints),
-      waypointDelayMs: teleportRaw.waypointDelayMs ?? 3000
+      waypointDelayMs: teleportRaw.waypointDelayMs ?? 3000,
+      waypointsHelp: teleportRaw.waypointsHelp?.trim() || ''
     },
     bot: {
-<<<<<<< HEAD
-      idleTimeoutMs: botConfig.idleTimeoutMs ?? 90000,
-      idleCheckIntervalMs: botConfig.idleCheckIntervalMs ?? 10000,
-      homeCommand: botConfig.homeCommand || '/home',
-      afkCommand: botConfig.afkCommand || '/afk',
-      afkDelayMs: botConfig.afkDelayMs ?? 500,
-      homeWaitMs: botConfig.homeWaitMs ?? 3000,
-      replyDelayMs: botConfig.replyDelayMs ?? 500,
-      interactionDistance: botConfig.interactionDistance ?? (botConfig as { mountRange?: number }).mountRange ?? 3,
-      approachDistance: botConfig.approachDistance ?? 10,
-      forwardWaitMs: botConfig.forwardWaitMs ?? (botConfig as { fwdWaitMs?: number }).fwdWaitMs ?? 2000,
-      ridingCheckIntervalMs: botConfig.ridingCheckIntervalMs ?? 1500,
-      reconnectDelayMs: botConfig.reconnectDelayMs ?? 20000,
-      authReconnectDelayMs: botConfig.authReconnectDelayMs ?? 15000,
-      spamReconnectDelayMs: botConfig.spamReconnectDelayMs ?? 30000,
-      spawnTimeoutMs: botConfig.spawnTimeoutMs ?? 30000
-=======
       idleTimeoutMs: botRaw.idleTimeoutMs ?? 90000,
       idleCheckIntervalMs: botRaw.idleCheckIntervalMs ?? 10000,
       homeCommand: botRaw.homeCommand || '/home',
@@ -202,11 +196,11 @@ function loadGameDefaults (): GameDefaults {
       forwardWaitMs: botRaw.forwardWaitMs ?? 2000,
       ridingCheckIntervalMs: botRaw.ridingCheckIntervalMs ?? 1500,
       homeMovementThreshold: botRaw.homeMovementThreshold ?? 30,
+      statusMountDebugLog: botRaw.statusMountDebugLog ?? false,
       reconnectDelayMs: botRaw.reconnectDelayMs ?? 20000,
       authReconnectDelayMs: botRaw.authReconnectDelayMs ?? 15000,
       spamReconnectDelayMs: botRaw.spamReconnectDelayMs ?? 30000,
       spawnTimeoutMs: botRaw.spawnTimeoutMs ?? 30000
->>>>>>> 738ce30 (Feature: multi instances & presets, config convert into yaml.)
     },
     viewer: {
       enabled: viewerRaw.enabled ?? false,
@@ -255,7 +249,15 @@ function buildBotConfig (
     : shared.profilesFolder
 
   const commandMerged = deepMerge(game.command, raw.command ?? {})
-  const messagesMerged = deepMerge(game.messages, raw.messages ?? {})
+  const helpLines = normalizeHelpLines(raw.helpLines ?? raw.messages?.helpLines)
+  if (helpLines.length === 0) {
+    console.error(`[Config] Bot "${id}" missing helpLines (define in config/bots/${id}.yaml)`)
+    process.exit(1)
+  }
+  const messagesMerged: MessagesConfig = {
+    ...deepMerge(game.messages, raw.messages ?? {}),
+    helpLines
+  }
   const teleportOverride: Partial<TeleportConfig> = { ...(raw.teleport ?? {}) }
   if (raw.teleport?.waypoints !== undefined) {
     teleportOverride.waypoints = normalizeWaypoints(raw.teleport.waypoints)

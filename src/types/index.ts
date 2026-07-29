@@ -106,6 +106,8 @@ export interface TeleportConfig {
   phomeCommand: string
   waypoints: WaypointConfig[]
   waypointDelayMs?: number
+  /** help / phome 用法里 {waypoints} 的展示文案（固定字符串，与 alias 无关） */
+  waypointsHelp?: string
 }
 
 export interface BotBehaviorConfig {
@@ -120,11 +122,9 @@ export interface BotBehaviorConfig {
   approachDistance: number
   forwardWaitMs: number
   ridingCheckIntervalMs: number
-<<<<<<< HEAD
-  /** 普通掉线/踢出后重连等待（毫秒） */
-=======
   homeMovementThreshold: number
->>>>>>> 738ce30 (Feature: multi instances & presets, config convert into yaml.)
+  /** status 命令是否输出骑乘调试日志到控制台 */
+  statusMountDebugLog: boolean
   reconnectDelayMs: number
   authReconnectDelayMs: number
   spamReconnectDelayMs: number

@@ -10,5 +10,7 @@ tpahereCommand: /tpahere
 phomeCommand: /phome
 # phome 后等待再发 tpahere（毫秒）
 waypointDelayMs: 3000
-# 默认传送点列表（bot 可整段覆盖）
+# help / phome 用法中 {waypoints} 的固定展示文案（与输入用的 alias 无关）
+waypointsHelp: ""
+# 默认传送点列表（bot 可整段覆盖；alias 仅用于命令输入）
 waypoints: []

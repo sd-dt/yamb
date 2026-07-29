@@ -184,7 +184,9 @@ export async function handleStatus (
   username: string,
   source: CommandSource
 ): Promise<void> {
-  logMountDebug(ctx, username)
+  if (ctx.statusMountDebugLog) {
+    logMountDebug(ctx, username)
+  }
 
   const uptimeSec = Math.floor(process.uptime())
   const hours = Math.floor(uptimeSec / 3600)

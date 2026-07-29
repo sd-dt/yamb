@@ -1,29 +1,44 @@
-# 第二个 bot 示例：复制为 bot2.yaml 并设 enabled: true
-
-id: bot2
+id: bot_id
 enabled: false
 
 account:
-  username: another@example.com
+  username: name@domain.com
   password: ""
   auth: microsoft
-  profilesSubdir: bot2
+  profilesSubdir: bot
 
 adminList:
-  - nanoite
+  - admin_id
 
 astrbot:
   enabled: false
   port: 15101
 
 command:
-  prefix: "#bot2"
+  prefix: "#b"
+
+# 本 bot 的 help 回复（各 bot 按分工单独配置）
+helpLines:
+  - "游戏内命令帮助"
+  - "私聊无需前缀；公屏需 {prefix}（若已开启）"
+  - "phome <传送点> — 传送 ({waypoints})"
+  - "mount [游戏名] / unmount / cart — 骑乘 / 下马 / 上车"
+  - "lock / lock hover / unlock — 锁定 / 滞空锁定 / 解锁"
+  - "status — 查看状态"
 
 teleport:
-  databaseFile: ./data/bot2.db
-  waypoints: []
+  databaseFile: ./data/bot.db
+  # help 里 {waypoints} 的固定展示文案（alias 只用于输入）
+  waypointsHelp: "1工业区 2建筑区 3刷怪塔"
+  waypoints:
+    - id: 工业区
+      alias: "1"
+    - id: 建筑区
+      alias: "2"
+    - id: 刷怪塔
+      alias: "3"
 
-# 覆盖默认交互距离示例
+# 覆盖 config/game/* 配置
 bot:
   interactionDistance: 5
 

@@ -24,6 +24,8 @@ approachDistance: 10
 forwardWaitMs: 2000
 # 骑乘状态检测间隔（毫秒）
 ridingCheckIntervalMs: 1500
+# status 命令是否在控制台输出骑乘调试日志
+statusMountDebugLog: false
 # 普通掉线/踢出后重连等待（毫秒）
 reconnectDelayMs: 20000
 # 微软登录失败后重连等待（毫秒）
