@@ -120,6 +120,14 @@ export interface BotBehaviorConfig {
   approachDistance: number
   forwardWaitMs: number
   ridingCheckIntervalMs: number
+  /** 普通掉线/踢出后重连等待（毫秒） */
+  reconnectDelayMs: number
+  /** 微软登录失败后重连等待（毫秒） */
+  authReconnectDelayMs: number
+  /** spam 踢出后重连等待（毫秒） */
+  spamReconnectDelayMs: number
+  /** 登录或收资源包后未 spawn 的超时（毫秒） */
+  spawnTimeoutMs: number
 }
 
 export interface ViewerConfig {

@@ -190,7 +190,11 @@ function loadFeatureConfig (): Pick<AppConfig, 'command' | 'teleport' | 'bot' | 
       interactionDistance: botConfig.interactionDistance ?? (botConfig as { mountRange?: number }).mountRange ?? 3,
       approachDistance: botConfig.approachDistance ?? 10,
       forwardWaitMs: botConfig.forwardWaitMs ?? (botConfig as { fwdWaitMs?: number }).fwdWaitMs ?? 2000,
-      ridingCheckIntervalMs: botConfig.ridingCheckIntervalMs ?? 1500
+      ridingCheckIntervalMs: botConfig.ridingCheckIntervalMs ?? 1500,
+      reconnectDelayMs: botConfig.reconnectDelayMs ?? 20000,
+      authReconnectDelayMs: botConfig.authReconnectDelayMs ?? 15000,
+      spamReconnectDelayMs: botConfig.spamReconnectDelayMs ?? 30000,
+      spawnTimeoutMs: botConfig.spawnTimeoutMs ?? 30000
     },
     viewer: {
       enabled: viewerConfig.enabled ?? false,

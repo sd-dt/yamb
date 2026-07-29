@@ -47,7 +47,12 @@ async function main (): Promise<void> {
   console.log(`[Main] Whitelist loaded (${whitelist.count()} entries)`)
   console.log(`[Main] Containers loaded (${containerRegistry.count()} entries)`)
 
-  const mcBot = new MinecraftBot(config.minecraft, config.command.whisperCommand)
+  const mcBot = new MinecraftBot(config.minecraft, config.command.whisperCommand, {
+    reconnectDelayMs: config.bot.reconnectDelayMs,
+    authReconnectDelayMs: config.bot.authReconnectDelayMs,
+    spamReconnectDelayMs: config.bot.spamReconnectDelayMs,
+    spawnTimeoutMs: config.bot.spawnTimeoutMs
+  })
   mcBot.setMessageQueue(messageQueue)
 
   const systemBuffer = new SystemMessageBuffer()
@@ -143,6 +148,7 @@ async function main (): Promise<void> {
     standbyManager.stop()
     apiServer?.stop()
     messageQueue.clear()
+    mcBot.stop()
     closeDatabase()
     process.exit(0)
   })
@@ -175,7 +181,11 @@ function isMicrosoftAuthMessage (message: string): boolean {
     msg.includes('sign in failed') ||
     msg.includes('microsoft') ||
     msg.includes('xbox') ||
-    msg.includes('oauth')
+    msg.includes('oauth') ||
+    msg.includes('profile data') ||
+    msg.includes('own minecraft') ||
+    msg.includes('invalid session') ||
+    msg.includes('authentication')
 }
 
 function isTransientStartupError (err: Error): boolean {
@@ -191,7 +201,11 @@ function isTransientStartupError (err: Error): boolean {
     msg.includes('socket hang up') ||
     msg.includes('network') ||
     msg.includes('getaddrinfo') ||
-    msg.includes('timeout')
+    msg.includes('timeout') ||
+    msg.includes('profile data') ||
+    msg.includes('own minecraft') ||
+    msg.includes('invalid session') ||
+    msg.includes('authentication')
 }
 
 main().catch(err => {
