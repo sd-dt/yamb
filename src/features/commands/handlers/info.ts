@@ -8,18 +8,25 @@ import {
   isOnPluginCloudSeat,
   isStillRidingPlayer
 } from '../../../actions/shared/entity-utils'
+import { isBrewingContext } from '../../../state/types'
+import { formatBrewingStatus } from '../../../state/brewing-status'
 
 function resolveActivityStatus (ctx: CommandContext): string {
   const mode = ctx.botState.getMode()
   if (mode === 'lock') {
     return ctx.botState.isHoverLocked() ? '滞空锁定' : '锁定'
   }
-  if (mode === 'brewing') return '酿造'
+  if (mode === 'brewing') {
+    const context = ctx.botState.getContext()
+    return isBrewingContext(context) ? formatBrewingStatus(context) : '酿造'
+  }
   if (mode === 'ride') {
     const ride = ctx.botState.getRideContext()
     if (ride?.kind === 'minecart') return '矿车'
     return '骑乘'
   }
+  const aging = ctx.brewModule.formatAgingStatusLines()
+  if (aging.length > 0) return aging[0]
   return '空闲'
 }
 
@@ -195,9 +202,10 @@ export async function handleStatus (
   const lines = [
     `状态: ${resolveActivityStatus(ctx)}`,
     `运行: ${hours}h ${minutes}m`,
-    `位置: ${formatPosition(ctx)}`
+    `位置: ${formatPosition(ctx)}`,
+    ...ctx.brewModule.formatAgingStatusLines()
   ]
-  await ctx.reply(username, lines.join('\n'), source)
+  await ctx.reply(username, lines.join('\n'), source, true)
 }
 
 export async function handleHelp (
@@ -206,5 +214,5 @@ export async function handleHelp (
   source: CommandSource
 ): Promise<void> {
   const lines = ctx.messages.lines('helpLines', { waypoints: ctx.waypointHint() })
-  await ctx.reply(username, lines.join('\n'), source)
+  await ctx.reply(username, lines.join('\n'), source, true)
 }

@@ -71,18 +71,30 @@ export interface MessagesConfig {
   attackUsage?: string
   attackSuccess?: string
   attackError?: string
-  containerAddUsage?: string
-  containerAddSuccess?: string
-  containerRemoveUsage?: string
-  containerRemoveSuccess?: string
-  containerRemoveNotFound?: string
-  containerListEmpty?: string
-  containerListHeader?: string
-  containerListEntry?: string
-  containerInfoUsage?: string
-  containerInfoNotFound?: string
-  containerInfoLines?: string[]
-  containerNoTarget?: string
+  nodeUsage?: string
+  nodeRegUsage?: string
+  nodeRegSuccess?: string
+  nodeRegError?: string
+  nodeRemoveUsage?: string
+  nodeRemoveSuccess?: string
+  nodeNotFound?: string
+  nodeContainerNotFound?: string
+  nodeListEmpty?: string
+  nodeListHeader?: string
+  nodeListEntry?: string
+  nodeInfoUsage?: string
+  nodeInfoLines?: string[]
+  nodeNoTarget?: string
+  dedicatedContainerMismatch?: string
+  brewUsage?: string
+  brewDisabled?: string
+  brewRecipeNotFound?: string
+  brewBusy?: string
+  brewStarted?: string
+  brewStatusIdle?: string
+  brewStatusRunning?: string
+  brewCancelRequested?: string
+  brewStopped?: string
   helpLines?: string[]
 }
 
@@ -91,6 +103,8 @@ export interface CommandConfig {
   whisperCommand: string
   allowPublicCommands: boolean
   replyAlwaysWhisper: boolean
+  /** 除 status/help 外，将命令回复写入日志而不发送给玩家 */
+  silentMode: boolean
   messages: MessagesConfig
 }
 
@@ -138,8 +152,64 @@ export interface ViewerConfig {
   viewDistance: number
 }
 
+export interface FermentationIngredient {
+  /** 专用原料容器的 BlockNode alias */
+  container: string
+  /** 每个炼药锅投入数量 */
+  count: number
+}
+
+export const AGING_WOOD_TYPES = [
+  'oak',
+  'spruce',
+  'birch',
+  'jungle',
+  'acacia',
+  'mangrove',
+  'cherry',
+  'bamboo',
+  'any'
+] as const
+
+export type AgingWoodType = typeof AGING_WOOD_TYPES[number]
+
+export interface BrewRecipe {
+  id: string
+  fermentation: {
+    durationSeconds: number
+    ingredients: FermentationIngredient[]
+  }
+  /** 省略时，发酵产物直接入成品箱 */
+  distillation?: {
+    /** 蒸馏循环次数；每次按 45 秒（40 秒 + 5 秒冗余）等待 */
+    runs: number
+  }
+  /** 省略时不进行陈化；days 为游戏日，每游戏日等待 20 分钟 */
+  aging?: {
+    days: number
+    wood: AgingWoodType
+  }
+}
+
+export type BrewWaterMode = 'source' | 'preloaded' | 'bucket-stock'
+
 export interface BrewConfig {
   enabled: boolean
+  group: string
+  fermenterCount: number
+  waterMode: BrewWaterMode
+  toolbox: string
+  waterSource: string
+  waterBucketContainer: string
+  emptyBucketContainer: string
+  bottleContainer: string
+  /** 按顺序使用的混合产物容器 BlockNode alias */
+  productContainers: string[]
+  /** @deprecated 使用 productContainers */
+  productContainer?: string
+  interactionDelayMs: number
+  waterRefillDelayMs: number
+  recipes: BrewRecipe[]
 }
 
 export interface MessageQueueConfig {

@@ -12,16 +12,32 @@ function ensureSchema (db: DatabaseSync): void {
       added_at  TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS containers (
-      alias     TEXT PRIMARY KEY,
-      type      TEXT NOT NULL,
-      x         INTEGER NOT NULL,
-      y         INTEGER NOT NULL,
-      z         INTEGER NOT NULL,
-      dimension TEXT NOT NULL DEFAULT 'overworld',
-      added_by  TEXT NOT NULL,
-      added_at  TEXT NOT NULL
-    )
+    CREATE TABLE IF NOT EXISTS BlockNode (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      alias        TEXT NOT NULL UNIQUE,
+      blockType    TEXT NOT NULL,
+      nodeGroup    TEXT,
+      x            INTEGER NOT NULL,
+      y            INTEGER NOT NULL,
+      z            INTEGER NOT NULL,
+      dimension    TEXT NOT NULL,
+      isDedicated  INTEGER
+                   CHECK (isDedicated IS NULL OR isDedicated IN (0, 1)),
+      itemId       TEXT,
+      createdBy    TEXT,
+      createdAt    TEXT NOT NULL,
+      updatedAt    TEXT NOT NULL,
+      CHECK (
+        (blockType <> 'Container' AND isDedicated IS NULL AND itemId IS NULL)
+        OR
+        (blockType = 'Container' AND isDedicated = 0 AND itemId IS NULL)
+        OR
+        (blockType = 'Container' AND isDedicated = 1 AND itemId IS NOT NULL)
+      ),
+      UNIQUE (dimension, x, y, z)
+    );
+
+    DROP TABLE IF EXISTS containers;
   `)
 }
 

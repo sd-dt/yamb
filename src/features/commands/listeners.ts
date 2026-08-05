@@ -1,5 +1,6 @@
 import { componentToText, usernameFromUuid } from '../../platform/chat-utils'
 import { getBotClient } from '../../platform/bot-client'
+import logBus from '../../platform/log-bus'
 import { parseWhisperMessage, shouldIgnoreSystemMessage } from './whisper-parser'
 import MessageDeduper from './message-deduper'
 import type { CommandSource } from './parser'
@@ -22,40 +23,50 @@ export function registerChatListeners (
   bot._mchatbotListenersRegistered = true
 
   const deduper = new MessageDeduper()
+  const botId = mcBot.botId
+  const tag = `[Bot:${botId}]`
+
+  function withBot<T> (fn: () => T): T {
+    return logBus.runAs(botId, fn)
+  }
 
   function dispatch (username: string, message: string, source: CommandSource): void {
-    const text = message.trim()
-    if (!text || !username || deduper.shouldSkip(username, text)) return
+    withBot(() => {
+      const text = message.trim()
+      if (!text || !username || deduper.shouldSkip(username, text)) return
 
-    console.log(`[MC:${source}] ${username}: ${text}`)
-    teleportHandler?.handle(text)
-    if (commandHandler) {
-      void commandHandler.handle(username, text, source)
-    }
+      console.log(`${tag}[MC:${source}] ${username}: ${text}`)
+      teleportHandler?.handle(text)
+      if (commandHandler) {
+        void commandHandler.handle(username, text, source)
+      }
+    })
   }
 
   function handleSystemText (text: string): void {
-    const trimmed = text.trim()
-    if (!trimmed || deduper.shouldSkipSystem(trimmed)) return
+    withBot(() => {
+      const trimmed = text.trim()
+      if (!trimmed || deduper.shouldSkipSystem(trimmed)) return
 
-    if (shouldIgnoreSystemMessage(trimmed)) return
+      if (shouldIgnoreSystemMessage(trimmed)) return
 
-    systemBuffer?.push(trimmed)
-    teleportHandler?.handle(trimmed)
+      systemBuffer?.push(trimmed)
+      teleportHandler?.handle(trimmed)
 
-    const chatMatch = trimmed.match(/^『[^』]*』(.+?)\s*>\s*(.+)$/)
-    if (chatMatch) {
-      dispatch(chatMatch[1].trim(), chatMatch[2].trim(), 'chat')
-      return
-    }
+      const chatMatch = trimmed.match(/^『[^』]*』(.+?)\s*>\s*(.+)$/)
+      if (chatMatch) {
+        dispatch(chatMatch[1].trim(), chatMatch[2].trim(), 'chat')
+        return
+      }
 
-    const whisper = parseWhisperMessage(trimmed)
-    if (whisper) {
-      dispatch(whisper.username, whisper.message, 'whisper')
-      return
-    }
+      const whisper = parseWhisperMessage(trimmed)
+      if (whisper) {
+        dispatch(whisper.username, whisper.message, 'whisper')
+        return
+      }
 
-    console.log(`[MC:system] ${trimmed}`)
+      console.log(`${tag}[MC:system] ${trimmed}`)
+    })
   }
 
   bot.on('chat', (username, message) => {
@@ -69,13 +80,15 @@ export function registerChatListeners (
   })
 
   getBotClient(bot)?.on('system_chat', (packet: unknown) => {
-    try {
-      const content = (packet as { content?: unknown }).content
-      const message = componentToText(content as Parameters<typeof componentToText>[0])
-      if (message) handleSystemText(message)
-    } catch (error) {
-      console.error('[Command] system_chat 处理失败:', error)
-    }
+    withBot(() => {
+      try {
+        const content = (packet as { content?: unknown }).content
+        const message = componentToText(content as Parameters<typeof componentToText>[0])
+        if (message) handleSystemText(message)
+      } catch (error) {
+        console.error(`${tag}[Command] system_chat 处理失败:`, error)
+      }
+    })
   })
 
   bot.on('messagestr', (message, position) => {
@@ -85,53 +98,63 @@ export function registerChatListeners (
   })
 
   getBotClient(bot)?.on('player_chat', (packet: unknown) => {
-    const p = packet as Record<string, unknown>
-    try {
-      let message = ''
-      let username: string | null = null
+    withBot(() => {
+      const p = packet as Record<string, unknown>
+      try {
+        let message = ''
+        let username: string | null = null
 
-      if (p.senderUuid) {
-        username = usernameFromUuid(bot, String(p.senderUuid))
-      }
-      if (!username && p.senderName) {
-        username = componentToText(p.senderName as Parameters<typeof componentToText>[0])
-      }
+        if (p.senderUuid) {
+          username = usernameFromUuid(bot, String(p.senderUuid))
+        }
+        if (!username && p.senderName) {
+          username = componentToText(p.senderName as Parameters<typeof componentToText>[0])
+        }
 
-      if (p.plainMessage) {
-        message = String(p.plainMessage)
-      } else if (p.unsignedChatContent) {
-        message = componentToText(p.unsignedChatContent as Parameters<typeof componentToText>[0])
-      } else if (p.signedChatContent) {
-        message = componentToText(p.signedChatContent as Parameters<typeof componentToText>[0])
-      } else if (p.message) {
-        message = componentToText(p.message as Parameters<typeof componentToText>[0])
-      }
+        if (p.plainMessage) {
+          message = String(p.plainMessage)
+        } else if (p.unsignedChatContent) {
+          message = componentToText(p.unsignedChatContent as Parameters<typeof componentToText>[0])
+        } else if (p.signedChatContent) {
+          message = componentToText(p.signedChatContent as Parameters<typeof componentToText>[0])
+        } else if (p.message) {
+          message = componentToText(p.message as Parameters<typeof componentToText>[0])
+        }
 
-      if (username && message) {
-        dispatch(username, message, 'chat')
+        if (username && message) {
+          dispatch(username, message, 'chat')
+        }
+      } catch (error) {
+        console.error(`${tag}[Command] player_chat 处理失败:`, error)
       }
-    } catch (error) {
-      console.error('[Command] player_chat 处理失败:', error)
-    }
+    })
   })
 
   bot.on('playerJoined', (player) => {
-    if (player.username === bot.username) return
-    if (deduper.shouldSkipEvent(`join:${player.username}`)) return
-    console.log(`[MC:join] ${player.username} 加入了游戏`)
+    withBot(() => {
+      if (player.username === bot.username) return
+      if (deduper.shouldSkipEvent(`join:${player.username}`)) return
+      console.log(`${tag}[MC:join] ${player.username} 加入了游戏`)
+    })
   })
 
   bot.on('playerLeft', (player) => {
-    if (player.username === bot.username) return
-    if (deduper.shouldSkipEvent(`leave:${player.username}`)) return
-    console.log(`[MC:leave] ${player.username} 离开了游戏`)
+    withBot(() => {
+      if (player.username === bot.username) return
+      if (deduper.shouldSkipEvent(`leave:${player.username}`)) return
+      console.log(`${tag}[MC:leave] ${player.username} 离开了游戏`)
+    })
   })
 
   bot.on('death', () => {
-    console.log('[MC:death] 机器人死亡')
+    withBot(() => {
+      console.log(`${tag}[MC:death] 机器人死亡`)
+    })
   })
 
   bot.on('respawn', () => {
-    console.log('[MC:respawn] 机器人重生')
+    withBot(() => {
+      console.log(`${tag}[MC:respawn] 机器人重生`)
+    })
   })
 }

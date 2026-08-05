@@ -24,6 +24,8 @@ helpLines:
   - "phome <传送点> — 传送 ({waypoints})"
   - "mount [游戏名] / unmount / cart — 骑乘 / 下马 / 上车"
   - "lock / lock hover / unlock — 锁定 / 滞空锁定 / 解锁"
+  - "node reg/list/info/remove — 管理方块节点（仅管理员）"
+  - "brew start/status/cancel — 酿酒任务"
   - "status — 查看状态"
 
 teleport:

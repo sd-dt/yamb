@@ -1,3 +1,34 @@
-# 酿造模块（占位）
+# 酿酒模块是否启用
+enabled: true
 
-enabled: false
+# 本实例只检索/操作此区域中的 BlockNode
+group: brewery
+# 每批使用的 Fermenter 数量；不足时拒绝启动
+fermenterCount: 9
+
+# 加水模式：
+# source       = 从工具箱 `toolbox` 领取一个桶，在水源 `waterSource` 反复取水（目前有问题，不推荐）
+# preloaded    = 不执行加水，只检查炼药锅是否满水（推荐，可以使用红石为炼药锅自动加水）
+# bucket-stock = 从水桶容器 `waterBucketContainer` 领取足量水桶，空桶存入另一个容器 `emptyBucketContainer`
+# 三种模式都会在投料前严格复查全部炼药锅，任一未满则终止任务。
+waterMode: bucket-stock
+
+# source 加水模式使用的 BlockNode.alias
+toolbox: tools
+waterSource: water
+
+# bucket-stock 加水模式使用的专用容器 BlockNode.alias
+waterBucketContainer: water_buckets
+emptyBucketContainer: empty_buckets
+
+# 空瓶的 BlockNode.alias
+bottleContainer: bottle
+# 成品箱的 BlockNode.alias，按顺序使用
+productContainers:
+  - p1
+  - p2
+
+# 每次方块交互之间的间隔
+interactionDelayMs: 300
+# source 加水模式空桶取水后等待无限水源恢复
+waterRefillDelayMs: 750

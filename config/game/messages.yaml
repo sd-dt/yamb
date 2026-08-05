@@ -38,23 +38,37 @@ cartError: "失败: {message}"
 attackUsage: "用法: attack [游戏名]"
 attackSuccess: "{message}"
 attackError: "失败: {message}"
-containerAddUsage: "用法: container add <别名>（需对准容器方块）"
-containerAddSuccess: 已记录容器 {alias} ({type}) @ {x},{y},{z}
-containerRemoveUsage: "用法: container remove <别名>"
-containerRemoveSuccess: 已删除容器 {alias}
-containerRemoveNotFound: 容器 {alias} 不存在
-containerListEmpty: 未记录任何容器
-containerListHeader: 容器列表 (共 {count} 个)
-containerListEntry: "- {alias} | {type} @ {x},{y},{z}"
-containerInfoUsage: "用法: container info <别名>"
-containerInfoNotFound: 容器 {alias} 不存在
-containerInfoLines:
-  - 容器 {alias}
-  - "类型: {type}"
+nodeUsage: "用法: node reg|remove|list|info（仅管理员）"
+nodeRegUsage: "用法: node reg <别名> <x> <y> <z> [-m|-mixed] [-g <区域>]"
+nodeRegSuccess: 已登记节点 {alias} ({blockType})，区域 {group}，{containerMode} @ {x},{y},{z}
+nodeRegError: "登记失败: {message}"
+nodeRemoveUsage: "用法: node remove <别名>"
+nodeRemoveSuccess: 已删除节点 {alias}
+nodeNotFound: 节点 {alias} 不存在
+nodeContainerNotFound: 容器节点 {alias} 不存在
+nodeListEmpty: 未找到任何节点
+nodeListHeader: 节点列表 (区域 {group}，共 {count} 个)
+nodeListEntry: "- {alias} | {blockType} | {group} @ {x},{y},{z}"
+nodeInfoUsage: "用法: node info <别名>"
+nodeInfoLines:
+  - 节点 {alias}
+  - "类型: {blockType}"
+  - "区域: {group}"
   - "坐标: {x}, {y}, {z}"
   - "维度: {dimension}"
-  - "记录: {addedBy} ({date})"
-containerNoTarget: 请对准容器方块（箱、桶等）
+  - "容器模式: {containerMode}"
+  - "记录: {createdBy} ({date})"
+nodeNoTarget: 指定坐标未加载，或不是受支持的容器、炼药锅、酿造台、木板陈化节点或水方块
+dedicatedContainerMismatch: 容器 {alias} 仅供 bot 存取 {itemId}
+brewUsage: "用法: brew start <配方> | brew status | brew cancel | brew stop | brew reload（仅管理员）"
+brewDisabled: 酿酒模块未启用
+brewRecipeNotFound: 配方 {recipe} 不存在
+brewBusy: bot 正在执行酿酒任务
+brewStarted: 已开始酿造 {recipe}
+brewStatusIdle: 当前没有酿酒任务
+brewStatusRunning: "酿酒中: {recipe} | {status}"
+brewCancelRequested: 已请求取消酿酒任务
+brewStopped: 已强制停止酿酒任务，bot 已进入空闲状态
 invHeader: "背包 ({count} 种):"
 invEmpty: 背包为空
 invError: "失败: {message}"
