@@ -1,0 +1,8 @@
+fermentation:
+  # 每锅全部原料投完后开始计时
+  duration: 8m
+  ingredients:
+    # 键为专用容器 BlockNode alias，值为每锅数量
+    cherry: 10
+    sugar: 2
+    milk: 2

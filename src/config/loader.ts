@@ -6,6 +6,8 @@ import type {
   AstrbotConfig,
   BotBehaviorConfig,
   BrewConfig,
+  BrewRecipe,
+  AgingWoodType,
   CommandConfig,
   MessagesConfig,
   SharedEnvConfig,
@@ -13,6 +15,7 @@ import type {
   ViewerConfig,
   WaypointConfig
 } from '../types'
+import { AGING_WOOD_TYPES } from '../types'
 
 const PROJECT_ROOT = path.join(__dirname, '..', '..')
 const CONFIG_DIR = path.join(PROJECT_ROOT, 'config')
@@ -104,6 +107,146 @@ function normalizeAdminList (raw: unknown): string[] {
   return raw.map(x => String(x).trim()).filter(Boolean)
 }
 
+function normalizeAliasList (raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return [...new Set(raw.map(value => String(value).trim()).filter(Boolean))]
+}
+
+function parseDurationSeconds (raw: unknown): number {
+  if (typeof raw === 'number') return raw
+  if (typeof raw !== 'string') return Number.NaN
+
+  const value = raw.trim().toLowerCase().replace(/\s+/g, '')
+  if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value)
+
+  const units: Record<string, number> = {
+    s: 1,
+    m: 60,
+    h: 3600,
+    d: 86400
+  }
+  const pattern = /(\d+(?:\.\d+)?)([smhd])/g
+  let total = 0
+  let consumed = 0
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(value)) != null) {
+    if (match.index !== consumed) return Number.NaN
+    total += Number(match[1]) * units[match[2]]
+    consumed = pattern.lastIndex
+  }
+  return consumed === value.length && consumed > 0 ? total : Number.NaN
+}
+
+interface RawBrewRecipe {
+  id?: unknown
+  fermentation?: {
+    duration?: unknown
+    durationSeconds?: unknown
+    ingredients?: unknown
+  }
+  distillation?: unknown
+  aging?: unknown
+}
+
+function parseAgingWood (raw: unknown): AgingWoodType | null {
+  const value = String(raw ?? '').trim().toLowerCase()
+  return (AGING_WOOD_TYPES as readonly string[]).includes(value)
+    ? value as AgingWoodType
+    : null
+}
+
+function parseAging (
+  raw: unknown
+): BrewRecipe['aging'] | null | undefined {
+  if (raw == null) return undefined
+  if (typeof raw === 'number' || typeof raw === 'string') {
+    const days = Number(raw)
+    if (!Number.isInteger(days) || days <= 0) return null
+    return { days, wood: 'any' }
+  }
+  if (typeof raw !== 'object') return null
+  const entry = raw as { days?: unknown, wood?: unknown }
+  const days = Number(entry.days)
+  const wood = parseAgingWood(entry.wood ?? 'any')
+  if (!Number.isInteger(days) || days <= 0 || !wood) return null
+  return { days, wood }
+}
+
+export function loadBrewRecipes (): BrewRecipe[] {
+  if (!fs.existsSync(RECIPES_CONFIG_DIR)) return []
+
+  const files = fs.readdirSync(RECIPES_CONFIG_DIR)
+    .filter(name => name.endsWith('.yaml') || name.endsWith('.yml'))
+    .sort()
+  const recipes: BrewRecipe[] = []
+
+  for (const fileName of files) {
+    const filePath = path.join(RECIPES_CONFIG_DIR, fileName)
+    const raw = readYaml<RawBrewRecipe>(filePath)
+    if (!raw) continue
+
+    const defaultId = path.basename(fileName).replace(/\.(yaml|yml)$/i, '')
+    const id = String(raw.id ?? defaultId).trim()
+    const durationSeconds = parseDurationSeconds(
+      raw.fermentation?.duration ?? raw.fermentation?.durationSeconds
+    )
+    const rawIngredients = raw.fermentation?.ingredients
+    const ingredients = Array.isArray(rawIngredients)
+      ? rawIngredients
+        .map(item => {
+          const entry = item as { container?: unknown, count?: unknown } | null
+          return {
+            container: String(entry?.container ?? '').trim(),
+            count: Number(entry?.count)
+          }
+        })
+        .filter(item => item.container && Number.isInteger(item.count) && item.count > 0)
+      : rawIngredients && typeof rawIngredients === 'object'
+        ? Object.entries(rawIngredients as Record<string, unknown>)
+          .map(([container, count]) => ({
+            container: container.trim(),
+            count: Number(count)
+          }))
+          .filter(item => item.container && Number.isInteger(item.count) && item.count > 0)
+        : []
+    const distillationRuns = raw.distillation == null
+      ? null
+      : Number(
+          typeof raw.distillation === 'object'
+            ? (raw.distillation as { runs?: unknown }).runs
+            : raw.distillation
+        )
+    const aging = parseAging(raw.aging)
+
+    if (
+      !id ||
+      !Number.isFinite(durationSeconds) ||
+      durationSeconds < 0 ||
+      ingredients.length === 0 ||
+      (distillationRuns != null && (!Number.isInteger(distillationRuns) || distillationRuns <= 0)) ||
+      aging === null
+    ) {
+      console.warn(`[Config] Invalid brew recipe: ${filePath}`)
+      continue
+    }
+    if (recipes.some(recipe => recipe.id === id)) {
+      console.warn(`[Config] Duplicate brew recipe id "${id}": ${filePath}`)
+      continue
+    }
+
+    recipes.push({
+      id,
+      fermentation: { durationSeconds, ingredients },
+      ...(distillationRuns == null
+        ? {}
+        : { distillation: { runs: distillationRuns } }),
+      ...(aging == null ? {} : { aging })
+    })
+  }
+
+  return recipes
+}
+
 
 interface GameDefaults {
   command: Omit<CommandConfig, 'messages'> & { messages?: MessagesConfig }
@@ -172,7 +315,8 @@ function loadGameDefaults (): GameDefaults {
       prefix: commandRaw.prefix || '#ybot',
       whisperCommand: commandRaw.whisperCommand || '/msg',
       allowPublicCommands: commandRaw.allowPublicCommands ?? false,
-      replyAlwaysWhisper: commandRaw.replyAlwaysWhisper ?? true
+      replyAlwaysWhisper: commandRaw.replyAlwaysWhisper ?? true,
+      silentMode: commandRaw.silentMode ?? false
     },
     teleport: {
       databaseFile: teleportRaw.databaseFile || './data/db.db',
@@ -209,7 +353,24 @@ function loadGameDefaults (): GameDefaults {
       viewDistance: viewerRaw.viewDistance ?? 6
     },
     brew: {
-      enabled: brewRaw.enabled ?? false
+      enabled: brewRaw.enabled ?? false,
+      group: brewRaw.group?.trim() || 'brew_main',
+      fermenterCount: brewRaw.fermenterCount ?? 9,
+      waterMode: brewRaw.waterMode ?? 'source',
+      toolbox: brewRaw.toolbox?.trim() || 'tools',
+      waterSource: brewRaw.waterSource?.trim() || 'water',
+      waterBucketContainer: brewRaw.waterBucketContainer?.trim() || 'water_buckets',
+      emptyBucketContainer: brewRaw.emptyBucketContainer?.trim() || 'empty_buckets',
+      bottleContainer: brewRaw.bottleContainer?.trim() || 'bottles',
+      productContainers: (() => {
+        const aliases = normalizeAliasList(brewRaw.productContainers)
+        if (aliases.length > 0) return aliases
+        return [brewRaw.productContainer?.trim() || 'products']
+      })(),
+      productContainer: brewRaw.productContainer?.trim() || undefined,
+      interactionDelayMs: brewRaw.interactionDelayMs ?? 300,
+      waterRefillDelayMs: brewRaw.waterRefillDelayMs ?? 750,
+      recipes: loadBrewRecipes()
     }
   }
 }
@@ -269,6 +430,13 @@ function buildBotConfig (
   const botMerged = deepMerge(game.bot, raw.bot ?? {})
   const viewerMerged = deepMerge(game.viewer, raw.viewer ?? {})
   const brewMerged = deepMerge(game.brew, raw.brew ?? {})
+  if (raw.brew?.productContainers !== undefined) {
+    const aliases = normalizeAliasList(raw.brew.productContainers)
+    if (aliases.length > 0) brewMerged.productContainers = aliases
+  } else if (raw.brew?.productContainer?.trim()) {
+    // 兼容旧的单产物箱实例配置。
+    brewMerged.productContainers = [raw.brew.productContainer.trim()]
+  }
 
   const astrbotEnabled = raw.astrbot?.enabled ?? false
   const astrbot: AstrbotConfig = {

@@ -1,0 +1,19 @@
+# 复制为 *.yaml 后生效，通过文件名检索。
+# 本配方模板为竹酒配方
+
+fermentation:
+  # 每锅全部原料投完后开始计时，duration 支持 `s`、`m`、`h`、`d` 时间单位
+  duration: 8m
+  ingredients:
+    # 键为专用容器 BlockNode alias 字段（不是物品 ID！），值为每锅数量
+    bamboo: 12
+    wheat: 4
+
+# （可选）蒸馏次数
+# distillation: 1
+
+# （可选）陈化：days 为陈化年数（游戏日）
+# 木桶种类: oak|spruce|birch|jungle|acacia|mangrove|cherry|bamboo|any
+# aging:
+#   days: 6
+#   wood: bamboo

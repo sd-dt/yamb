@@ -19,7 +19,7 @@ replyDelayMs: 500
 # 与目标交互最大距离（格）
 interactionDistance: 3
 # 寻路接近目标的最大距离（格）
-approachDistance: 10
+approachDistance: 30
 # forward 等待系统消息时长（毫秒）
 forwardWaitMs: 2000
 # 骑乘状态检测间隔（毫秒）
@@ -27,9 +27,9 @@ ridingCheckIntervalMs: 1500
 # status 命令是否在控制台输出骑乘调试日志
 statusMountDebugLog: false
 # 普通掉线/踢出后重连等待（毫秒）
-reconnectDelayMs: 20000
+reconnectDelayMs: 1000
 # 微软登录失败后重连等待（毫秒）
-authReconnectDelayMs: 15000
+authReconnectDelayMs: 10000
 # spam 踢出后重连等待（毫秒）
 spamReconnectDelayMs: 30000
 # 登录或资源包后未 spawn 超时（毫秒）

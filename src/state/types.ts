@@ -1,9 +1,19 @@
 export type BotMode = 'idle' | 'ride' | 'brewing' | 'lock'
 
 export interface BrewingContext {
-  phase: 'checking' | 'fermenting' | 'waiting'
+  phase:
+    | 'checking'
+    | 'fermenting'
+    | 'waiting'
+    | 'bottling'
+    | 'distillery-loading'
+    | 'distilling'
+    | 'distillery-unloading'
+    | 'storing'
   recipe: string
   finishAt: number
+  distillationRuns?: number
+  distillationStartedAt?: number
 }
 
 export interface LockContext {

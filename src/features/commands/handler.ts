@@ -7,10 +7,11 @@ import type StandbyManager from '../standby/manager'
 import type PlayerInteractionService from '../../actions/player'
 import type MinecartInteractionService from '../../actions/minecart'
 import type RidingManager from '../riding/manager'
-import type ContainerRegistry from '../container/registry'
+import type BlockRegistry from '../block-registry'
 import type InventoryActions from '../../actions/inventory'
 import type SystemMessageBuffer from './system-buffer'
 import type BotState from '../../state/bot-state'
+import type BrewModule from '../brew'
 import type { CommandContext } from './handlers/types'
 import CommandMessages from './messages'
 import { sleep } from '../../platform/sleep'
@@ -23,9 +24,11 @@ import {
 } from './parser'
 import { handlePhome, handleLock, handleUnlock } from './handlers/teleport'
 import { handleMount, handleUnmount, handleCart, handleAttack } from './handlers/riding'
-import { handleContainer, handleInv, handleStore, handleTake, handleDrop } from './handlers/inventory'
+import { handleInv, handleStore, handleTake, handleDrop } from './handlers/inventory'
+import { handleNode } from './handlers/nodes'
 import { handleAdd, handleRemove, handleSay, handleForward } from './handlers/admin'
 import { handleStatus, handleHelp } from './handlers/info'
+import { handleBrew } from './handlers/brew'
 
 /** 锁定后禁止的动作命令（仅允许 /tpa 与文本回复类命令） */
 const LOCKED_BLOCKED_COMMANDS = new Set([
@@ -41,6 +44,8 @@ const LOCKED_BLOCKED_COMMANDS = new Set([
   'forward'
 ])
 
+const BREWING_ALLOWED_COMMANDS = new Set(['brew', 'status', 'help', '帮助'])
+
 export default class CommandHandler {
   private mcBot: MinecraftBot
   private teleportService: TeleportService
@@ -48,17 +53,19 @@ export default class CommandHandler {
   private playerInteraction: PlayerInteractionService
   private minecartInteraction: MinecartInteractionService
   private ridingManager: RidingManager
-  private containerRegistry: ContainerRegistry
+  private blockRegistry: BlockRegistry
   private inventoryActions: InventoryActions
   private systemBuffer: SystemMessageBuffer
   private whitelist: Whitelist
   private standby: StandbyManager
   private botState: BotState
+  private brewModule: BrewModule
   private messages: CommandMessages
   private prefix: string
   private adminList: Set<string>
   private allowPublicCommands: boolean
   private replyAlwaysWhisper: boolean
+  private silentMode: boolean
   private replyDelayMs: number
   private forwardWaitMs: number
   private interactionDistance: number
@@ -73,12 +80,13 @@ export default class CommandHandler {
     playerInteraction: PlayerInteractionService,
     minecartInteraction: MinecartInteractionService,
     ridingManager: RidingManager,
-    containerRegistry: ContainerRegistry,
+    blockRegistry: BlockRegistry,
     inventoryActions: InventoryActions,
     systemBuffer: SystemMessageBuffer,
     whitelist: Whitelist,
     standby: StandbyManager,
     botState: BotState,
+    brewModule: BrewModule,
     config: CommandConfig,
     botConfig: BotBehaviorConfig,
     adminList: string[]
@@ -89,17 +97,19 @@ export default class CommandHandler {
     this.playerInteraction = playerInteraction
     this.minecartInteraction = minecartInteraction
     this.ridingManager = ridingManager
-    this.containerRegistry = containerRegistry
+    this.blockRegistry = blockRegistry
     this.inventoryActions = inventoryActions
     this.systemBuffer = systemBuffer
     this.whitelist = whitelist
     this.standby = standby
     this.botState = botState
+    this.brewModule = brewModule
     this.prefix = config.prefix || '#ybot'
     this.messages = new CommandMessages(config.messages, this.prefix)
     this.adminList = new Set(adminList)
     this.allowPublicCommands = config.allowPublicCommands
     this.replyAlwaysWhisper = config.replyAlwaysWhisper
+    this.silentMode = config.silentMode
     this.replyDelayMs = botConfig.replyDelayMs
     this.forwardWaitMs = botConfig.forwardWaitMs
     this.interactionDistance = botConfig.interactionDistance
@@ -123,8 +133,19 @@ export default class CommandHandler {
     return this.replyAlwaysWhisper || source === 'whisper'
   }
 
-  async reply (username: string, message: string, source: CommandSource): Promise<void> {
+  async reply (
+    username: string,
+    message: string,
+    source: CommandSource,
+    allowInSilentMode = false
+  ): Promise<void> {
     const lines = message.split('\n').filter(line => line.trim())
+    if (this.silentMode && !allowInSilentMode) {
+      for (const line of lines) {
+        console.log(`[Bot:${this.mcBot.botId}][Silent][Reply:${username}] ${line}`)
+      }
+      return
+    }
     const viaWhisper = this.useWhisperReply(source)
 
     for (let i = 0; i < lines.length; i++) {
@@ -134,7 +155,7 @@ export default class CommandHandler {
         ? this.mcBot.whisper(username, line)
         : this.mcBot.chat(line)
       if (!ok) {
-        console.warn(`[Command] 回复失败 -> ${username}: ${line}`)
+        console.warn(`[Bot:${this.mcBot.botId}][Command] 回复失败 -> ${username}: ${line}`)
       }
     }
   }
@@ -156,12 +177,13 @@ export default class CommandHandler {
       playerInteraction: this.playerInteraction,
       minecartInteraction: this.minecartInteraction,
       ridingManager: this.ridingManager,
-      containerRegistry: this.containerRegistry,
+      blockRegistry: this.blockRegistry,
       inventoryActions: this.inventoryActions,
       systemBuffer: this.systemBuffer,
       whitelist: this.whitelist,
       standby: this.standby,
       botState: this.botState,
+      brewModule: this.brewModule,
       messages: this.messages,
       interactionDistance: this.interactionDistance,
       approachDistance: this.approachDistance,
@@ -206,10 +228,15 @@ export default class CommandHandler {
     this.standby.touch()
 
     const cmd = (parts.shift() || '').toLowerCase()
-    console.log(`[Command:${source}] ${username} -> ${cmd} ${parts.join(' ')}`.trim())
+    console.log(`[Bot:${this.mcBot.botId}][Command:${source}] ${username} -> ${cmd} ${parts.join(' ')}`.trim())
 
     const ctx = this.buildContext()
     const locked = this.botState.isLocked()
+
+    if (this.botState.isBrewing() && !BREWING_ALLOWED_COMMANDS.has(cmd)) {
+      await this.reply(username, this.messages.text('brewBusy'), source)
+      return
+    }
 
     if (locked && LOCKED_BLOCKED_COMMANDS.has(cmd)) {
       await this.notifyLocked(username, source)
@@ -217,9 +244,9 @@ export default class CommandHandler {
       return
     }
 
-    if (locked && cmd === 'container') {
+    if (locked && cmd === 'node') {
       const sub = (parts[0] || '').toLowerCase()
-      if (sub === 'add' || sub === 'remove') {
+      if (sub === 'reg' || sub === 'remove') {
         await this.notifyLocked(username, source)
         this.standby.scheduleAfk()
         return
@@ -242,8 +269,11 @@ export default class CommandHandler {
       case 'attack':
         await handleAttack(ctx, username, parts[0], source)
         break
-      case 'container':
-        await handleContainer(ctx, username, parts, source)
+      case 'node':
+        await handleNode(ctx, username, parts, source)
+        break
+      case 'brew':
+        await handleBrew(ctx, username, parts, source)
         break
       case 'lock':
         await handleLock(ctx, username, parts[0], source)
@@ -286,6 +316,8 @@ export default class CommandHandler {
         await this.reply(username, this.messages.text('unknownCommand', { cmd }), source)
     }
 
-    this.standby.scheduleAfk()
+    if (!this.botState.isBrewing()) {
+      this.standby.scheduleAfk()
+    }
   }
 }

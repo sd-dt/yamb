@@ -13,7 +13,7 @@ import PlayerInteractionService from '../actions/player'
 import MinecartInteractionService from '../actions/minecart'
 import RidingManager from '../features/riding/manager'
 import InventoryActions from '../actions/inventory'
-import ContainerRegistry from '../features/container/registry'
+import BlockRegistry from '../features/block-registry'
 import GameApiService from '../api/game-service'
 import SystemMessageBuffer from '../features/commands/system-buffer'
 import CommandHandler from '../features/commands/handler'
@@ -23,11 +23,14 @@ import AstrbotServer from '../api/server'
 import BotState from '../state/bot-state'
 import { isLockContext } from '../state/types'
 import { resumeBotPhysics } from '../actions/shared/entity-utils'
+import logBus from './log-bus'
 
 export interface BotInstance {
   id: string
   config: AppConfig
   mcBot: MinecraftBot
+  botState: BotState
+  brewModule: BrewModule
   db: DatabaseSync
   dbPath: string
   messageQueue: MessageQueue
@@ -50,21 +53,21 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
   const db = initDatabase(dbPath)
   migrateFromJson(db, resolveDataPath('./data/whitelist.json'))
 
-  const messageQueue = new MessageQueue(config.messageQueue)
+  const messageQueue = new MessageQueue(config.messageQueue, config.id)
   const whitelist = new Whitelist(db)
   const autoAdded = whitelist.ensurePresent(config.adminList)
   if (autoAdded.length > 0) {
     console.log(`${tag} Auto-whitelisted admins: ${autoAdded.join(', ')}`)
   }
-  const containerRegistry = new ContainerRegistry(db)
-  console.log(`${tag} Whitelist ${whitelist.count()}, containers ${containerRegistry.count()}`)
+  const blockRegistry = new BlockRegistry(db)
+  console.log(`${tag} Whitelist ${whitelist.count()}, block nodes ${blockRegistry.count()}`)
 
   const mcBot = new MinecraftBot(config.minecraft, config.command.whisperCommand, {
     reconnectDelayMs: config.bot.reconnectDelayMs,
     authReconnectDelayMs: config.bot.authReconnectDelayMs,
     spamReconnectDelayMs: config.bot.spamReconnectDelayMs,
     spawnTimeoutMs: config.bot.spawnTimeoutMs
-  })
+  }, config.id)
   mcBot.setMessageQueue(messageQueue)
 
   const systemBuffer = new SystemMessageBuffer()
@@ -99,10 +102,21 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
 
   standbyManager.setRidingManager(ridingManager)
   standbyManager.setIsLocked(isLocked)
+  standbyManager.setIsBusy(() => botState.isBrewing())
   ridingManager.setBotState(botState)
   ridingManager.setOnBehaviorEnd(() => standbyManager.scheduleAfk())
 
   const inventoryActions = new InventoryActions(mcBot)
+  const brewModule = new BrewModule(
+    mcBot,
+    config.brew,
+    blockRegistry,
+    inventoryActions,
+    botState,
+    config.bot.interactionDistance,
+    config.bot.approachDistance
+  )
+  brewModule.register()
   const gameApiService = new GameApiService(mcBot, whitelist, isLocked)
   const commandHandler = new CommandHandler(
     mcBot,
@@ -111,12 +125,13 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
     playerInteraction,
     minecartInteraction,
     ridingManager,
-    containerRegistry,
+    blockRegistry,
     inventoryActions,
     systemBuffer,
     whitelist,
     standbyManager,
     botState,
+    brewModule,
     config.command,
     config.bot,
     config.adminList
@@ -126,23 +141,23 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
     whitelist,
     mcBot,
     commandHandler.getCommandMessages(),
-    standbyManager
+    standbyManager,
+    config.command.silentMode
   )
 
   mcBot.onSpawn(() => {
-    registerChatListeners(mcBot, commandHandler, teleportHandler, systemBuffer)
-    ridingManager.start()
-    standbyManager.start()
-    void teleportService.restorePhysicalLockState()
-    if (config.viewer.enabled && mcBot.bot) {
-      startViewer(mcBot.bot, config.viewer)
-    }
+    logBus.runAs(config.id, () => {
+      registerChatListeners(mcBot, commandHandler, teleportHandler, systemBuffer)
+      ridingManager.start()
+      standbyManager.start()
+      void teleportService.restorePhysicalLockState()
+      if (config.viewer.enabled && mcBot.bot) {
+        startViewer(mcBot.bot, config.viewer)
+      }
+    })
   })
   mcBot.create()
   console.log(`${tag} Minecraft client starting as ${config.minecraft.username}`)
-
-  const brewModule = new BrewModule(mcBot, config.brew)
-  brewModule.register()
 
   let apiServer: AstrbotServer | null = null
   if (config.astrbot.enabled) {
@@ -155,6 +170,8 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
     id: config.id,
     config,
     mcBot,
+    botState,
+    brewModule,
     db,
     dbPath,
     messageQueue,
@@ -165,6 +182,8 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
       stopViewer(mcBot.bot)
       ridingManager.stop()
       standbyManager.stop()
+      brewModule.cancel()
+      brewModule.dispose()
       apiServer?.stop()
       messageQueue.clear()
       mcBot.stop()

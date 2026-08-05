@@ -8,3 +8,5 @@ whisperCommand: /msg
 allowPublicCommands: false
 # 回复是否始终走私聊
 replyAlwaysWhisper: true
+# 静默模式：除 status/help 外，命令回复只写入日志
+silentMode: true

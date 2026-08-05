@@ -1,0 +1,7 @@
+fermentation:
+  duration: 20m
+  ingredients:
+    potato: 15
+    sugar: 10
+
+distillation: 4

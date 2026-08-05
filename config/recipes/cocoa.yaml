@@ -1,0 +1,4 @@
+fermentation:
+  duration: 2m
+  ingredients:
+    cookie: 3

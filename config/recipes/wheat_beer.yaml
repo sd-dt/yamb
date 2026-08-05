@@ -1,0 +1,8 @@
+fermentation:
+  duration: 8m
+  ingredients:
+    wheat: 3
+
+aging:
+  days: 2
+  wood: birch

@@ -147,8 +147,8 @@ export default class RidingManager {
 
   async dismount (): Promise<{ success: boolean; message: string }> {
     const bot = this.mcBot.bot
-    if (!bot || this.mode === 'idle') {
-      return { success: false, message: '当前未处于骑乘状态' }
+    if (!bot) {
+      return { success: false, message: 'Bot 当前未连接' }
     }
 
     const mode = this.mode
@@ -160,7 +160,8 @@ export default class RidingManager {
       if (mode === 'minecart') {
         return isMountedOnMinecart(bot)
       }
-      return false
+      // 本地骑乘状态可能误判为 idle；仍按实际载具/AEC 云座状态确认。
+      return hasActiveVehicle(bot) || isOnPluginCloudSeat(bot)
     }
 
     this.dismountRequested = true

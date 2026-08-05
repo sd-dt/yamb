@@ -1,5 +1,6 @@
 import type { BotBehaviorConfig } from '../../types'
 import type MinecraftBot from '../../platform/minecraft-bot'
+import logBus from '../../platform/log-bus'
 import { eatGoldenCarrotsUntilFull } from './food'
 import { sleep } from '../../platform/sleep'
 
@@ -9,6 +10,7 @@ export default class StandbyManager {
   private mcBot: MinecraftBot
   private ridingManager: RidingManager | null = null
   private isLocked: () => boolean = () => false
+  private isBusy: () => boolean = () => false
   private idleTimeoutMs: number
   private homeCommand: string
   private afkCommand: string
@@ -30,6 +32,10 @@ export default class StandbyManager {
     this.checkIntervalMs = config.idleCheckIntervalMs
   }
 
+  private withBot<T> (fn: () => T): T {
+    return logBus.runAs(this.mcBot.botId, fn)
+  }
+
   setRidingManager (ridingManager: RidingManager): void {
     this.ridingManager = ridingManager
   }
@@ -38,11 +44,15 @@ export default class StandbyManager {
     this.isLocked = isLocked
   }
 
+  setIsBusy (isBusy: () => boolean): void {
+    this.isBusy = isBusy
+  }
+
   start (): void {
     if (this.checkTimer) return
     this.touch()
     this.checkTimer = setInterval(() => {
-      void this.checkIdle()
+      this.withBot(() => { void this.checkIdle() })
     }, this.checkIntervalMs)
     console.log(`[Standby] 空闲 ${this.idleTimeoutMs / 1000}s 后自动回家`)
   }
@@ -70,26 +80,33 @@ export default class StandbyManager {
     if (this.afkTimer) clearTimeout(this.afkTimer)
     const delay = attempt === 0 ? this.afkDelayMs : 1000
     this.afkTimer = setTimeout(() => {
-      const bot = this.mcBot.bot
-      // 骑乘时 onGround 恒为 false，应照常 AFK；仅意外半空时推迟
-      const riding = this.ridingManager?.isActive() ?? false
-      if (bot && !bot.entity.onGround && !riding && !this.isLocked()) {
-        if (attempt >= 10) {
-          console.log('[Standby] 多次未落地，放弃本次 AFK')
+      this.withBot(() => {
+        if (this.isBusy()) return
+        const bot = this.mcBot.bot
+        // 骑乘时 onGround 恒为 false，应照常 AFK；仅意外半空时推迟
+        const riding = this.ridingManager?.isActive() ?? false
+        if (bot && !bot.entity.onGround && !riding && !this.isLocked()) {
+          if (attempt >= 10) {
+            console.log('[Standby] 多次未落地，放弃本次 AFK')
+            return
+          }
+          console.log(`[Standby] 未落地，推迟 AFK (${attempt + 1}/10)`)
+          this.scheduleAfk(attempt + 1)
           return
         }
-        console.log(`[Standby] 未落地，推迟 AFK (${attempt + 1}/10)`)
-        this.scheduleAfk(attempt + 1)
-        return
-      }
-      if (this.mcBot.chat(this.afkCommand)) {
-        console.log(`[Standby] 执行 ${this.afkCommand}`)
-      }
+        if (this.mcBot.chat(this.afkCommand)) {
+          console.log(`[Standby] 执行 ${this.afkCommand}`)
+        }
+      })
     }, delay)
   }
 
   private async checkIdle (): Promise<void> {
     if (!this.mcBot.isReady || this.goingHome) return
+    if (this.isBusy()) {
+      this.touch()
+      return
+    }
     // 空闲 / 骑乘 / 锁定互斥：锁定与骑乘时不进入待命回家
     if (this.isLocked()) {
       this.scheduleAfk()

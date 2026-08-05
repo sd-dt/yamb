@@ -11,6 +11,7 @@ export default class TeleportIncomingHandler {
   private mcBot: MinecraftBot
   private messages: CommandMessages
   private standby: StandbyManager
+  private silentMode: boolean
   private _lastAccept?: { key: string; time: number }
   private _lastLockNotify?: { key: string; time: number }
 
@@ -19,13 +20,15 @@ export default class TeleportIncomingHandler {
     whitelist: Whitelist,
     mcBot: MinecraftBot,
     messages: CommandMessages,
-    standby: StandbyManager
+    standby: StandbyManager,
+    silentMode = false
   ) {
     this.teleportService = teleportService
     this.whitelist = whitelist
     this.mcBot = mcBot
     this.messages = messages
     this.standby = standby
+    this.silentMode = silentMode
   }
 
   handle (text: string): boolean {
@@ -67,7 +70,11 @@ export default class TeleportIncomingHandler {
     this._lastLockNotify = { key: dedupeKey, time: now }
 
     const message = this.messages.text('lockedBlocked', { lockedBy })
-    this.mcBot.whisper(playerName, message)
-    console.log(`[Teleport] 锁定拒绝 -> 通知 ${playerName} (锁定者: ${lockedBy})`)
+    if (this.silentMode) {
+      console.log(`[Bot:${this.mcBot.botId}][Silent][Reply:${playerName}] ${message}`)
+    } else {
+      this.mcBot.whisper(playerName, message)
+      console.log(`[Teleport] 锁定拒绝 -> 通知 ${playerName} (锁定者: ${lockedBy})`)
+    }
   }
 }

@@ -22,6 +22,8 @@ export default class MinecraftBot {
   config: MinecraftConfig
   bot: Bot | null = null
   isReady = false
+  readonly botId: string
+  private readonly logTag: string
   private acceptedResourcePacks = new Set<string>()
   private reconnectDelay: number
   private authReconnectDelay: number
@@ -42,14 +44,29 @@ export default class MinecraftBot {
     reconnect?: Partial<ReconnectTimingConfig> | Pick<
       BotBehaviorConfig,
       'reconnectDelayMs' | 'authReconnectDelayMs' | 'spamReconnectDelayMs' | 'spawnTimeoutMs'
-    >
+    >,
+    botId = 'bot'
   ) {
     this.config = config
     this.whisperCommand = whisperCommand
+    this.botId = botId
+    this.logTag = `[Bot:${botId}]`
     this.reconnectDelay = reconnect?.reconnectDelayMs ?? DEFAULT_RECONNECT.reconnectDelayMs
     this.authReconnectDelay = reconnect?.authReconnectDelayMs ?? DEFAULT_RECONNECT.authReconnectDelayMs
     this.spamReconnectDelay = reconnect?.spamReconnectDelayMs ?? DEFAULT_RECONNECT.spamReconnectDelayMs
     this.spawnTimeoutMs = reconnect?.spawnTimeoutMs ?? DEFAULT_RECONNECT.spawnTimeoutMs
+  }
+
+  private log (...args: unknown[]): void {
+    console.log(this.logTag, ...args)
+  }
+
+  private warn (...args: unknown[]): void {
+    console.warn(this.logTag, ...args)
+  }
+
+  private error (...args: unknown[]): void {
+    console.error(this.logTag, ...args)
   }
 
   setMessageQueue (queue: MessageQueue): void {
@@ -61,7 +78,7 @@ export default class MinecraftBot {
   }
 
   create (): Bot {
-    console.log('[MC] Creating bot...')
+    this.log('Creating bot...')
     this.intentionallyStopping = false
     // 重连前结束旧实例，避免僵尸连接继续触发 end/error
     this._disposeBot(true)
@@ -87,7 +104,7 @@ export default class MinecraftBot {
     }
 
     if (this.config.auth === 'microsoft') {
-      console.log('[MC] 使用微软账号登录，首次运行需在终端完成浏览器授权')
+      this.log('使用微软账号登录，首次运行需在终端完成浏览器授权')
     }
 
     this.bot = mineflayer.createBot(options)
@@ -128,13 +145,13 @@ export default class MinecraftBot {
     this._suppressProtocolErrors()
 
     this.bot.on('login', () => {
-      console.log(`[MC] Logged in as ${this.bot!.username}`)
+      this.log(`Logged in as ${this.bot!.username}`)
       // 登录后若长期不 spawn（无资源包或卡配置阶段），也强制重连
       this._armSpawnTimeout()
     })
 
     this.bot.on('spawn', () => {
-      console.log('[MC] Bot spawned in world')
+      this.log('Bot spawned in world')
       this.isReady = true
       this.reconnectScheduled = false
       this._clearSpawnTimeout()
@@ -151,17 +168,17 @@ export default class MinecraftBot {
 
     // mount 会暂停物理；dismount 后 mineflayer 不会自动恢复，需手动打开
     this.bot.on('dismount', () => {
-      console.log('[MC] dismount → 恢复物理')
+      this.log('dismount → 恢复物理')
       resumeBotPhysics(this.bot!)
     })
 
     this.bot.on('mount', () => {
-      console.log('[MC] mount → 物理由 mineflayer 暂停（载具模式）')
+      this.log('mount → 物理由 mineflayer 暂停（载具模式）')
     })
 
     this.bot.on('kicked', (reason) => {
       const reasonStr = typeof reason === 'string' ? reason : JSON.stringify(reason)
-      console.log('[MC] Kicked:', reasonStr)
+      this.log('Kicked:', reasonStr)
       this.isReady = false
       this.acceptedResourcePacks.clear()
       // kicked 后通常还会 end；先排队，end 时用 reconnectScheduled 去重
@@ -177,14 +194,7 @@ export default class MinecraftBot {
           err.message.includes('configuration'))) {
         return
       }
-      console.error('[MC] Error:', err.message)
-
-      if (this._isMicrosoftAuthError(err)) {
-        console.error('[MC] 登录失败提示:')
-        console.error('  - 微软账号 (MC_AUTH=microsoft) 不需要填写 MC_PASSWORD')
-        console.error('  - 删除 mc-tokens 目录后重新运行，在终端按提示完成浏览器授权')
-        console.error('  - 若仍失败，检查网络是否能访问 Microsoft 登录服务')
-      }
+      this.error('Error:', err.message)
 
       // 登录/网络错误：不依赖 end 是否触发，主动重连
       if (this._isTransientConnectError(err) || this._isMicrosoftAuthError(err)) {
@@ -201,17 +211,17 @@ export default class MinecraftBot {
     })
 
     getBotClient(this.bot)?.on('add_resource_pack', (data: unknown) => {
-      console.log('[MC] add_resource_pack received')
+      this.log('add_resource_pack received')
       this._acceptResourcePackOnce(String((data as { uuid?: string }).uuid || ''))
     })
 
     getBotClient(this.bot)?.on('resource_pack_send', (data: unknown) => {
-      console.log('[MC] resource_pack_send received')
+      this.log('resource_pack_send received')
       this._acceptResourcePackOnce(String((data as { uuid?: string }).uuid || ''))
     })
 
     this.bot.on('end', (reason) => {
-      console.log('[MC] Disconnected:', reason)
+      this.log('Disconnected:', reason)
       this.isReady = false
       this.acceptedResourcePacks.clear()
       if (this.intentionallyStopping) return
@@ -219,9 +229,21 @@ export default class MinecraftBot {
     })
   }
 
+  private _errorText (err: NodeJS.ErrnoException): string {
+    const cause = (err as Error & { cause?: unknown }).cause
+    return [
+      err.message || '',
+      err.code || '',
+      err.name || '',
+      cause instanceof Error ? cause.message : ''
+    ].join(' ').toLowerCase()
+  }
+
   private _isMicrosoftAuthError (err: NodeJS.ErrnoException): boolean {
-    const msg = (err.message || '').toLowerCase()
+    const msg = this._errorText(err)
     return msg.includes('fetch failed') ||
+      msg.includes('connect timeout') ||
+      msg.includes('login.live.com') ||
       msg.includes('sign in failed') ||
       msg.includes('microsoft') ||
       msg.includes('xbox') ||
@@ -235,7 +257,7 @@ export default class MinecraftBot {
 
   private _isTransientConnectError (err: NodeJS.ErrnoException): boolean {
     const code = err.code || ''
-    const msg = (err.message || '').toLowerCase()
+    const msg = this._errorText(err)
     if (
       code === 'ECONNRESET' ||
       code === 'ECONNREFUSED' ||
@@ -244,11 +266,14 @@ export default class MinecraftBot {
       code === 'EAI_AGAIN' ||
       code === 'ECONNABORTED' ||
       code === 'EHOSTUNREACH' ||
-      code === 'ENETUNREACH'
+      code === 'ENETUNREACH' ||
+      code === 'UND_ERR_CONNECT_TIMEOUT'
     ) {
       return true
     }
     return msg.includes('fetch failed') ||
+      msg.includes('connect timeout') ||
+      msg.includes('login.live.com') ||
       msg.includes('sign in failed') ||
       msg.includes('socket hang up') ||
       msg.includes('network') ||
@@ -311,18 +336,18 @@ export default class MinecraftBot {
 
   private _handleResourcePack (url: string, hash: { ascii?: string } | string): void {
     if (!this.bot) return
-    console.log('[MC] Resource pack received')
+    this.log('Resource pack received')
     const hashObj = typeof hash === 'object' ? hash : { ascii: String(hash) }
     const packKey = String(hashObj?.ascii || hash || url || '')
 
     if (packKey && this.acceptedResourcePacks.has(packKey)) {
-      console.log('[MC] Resource pack already accepted')
+      this.log('Resource pack already accepted')
       return
     }
 
     try {
       const uuidStr = hashObj?.ascii ? hashObj.ascii : String(hash || '')
-      console.log('[MC] Pack UUID:', uuidStr)
+      this.log('Pack UUID:', uuidStr)
 
       const statuses: Array<[string, number]> = [
         ['ACCEPTED', 3],
@@ -338,21 +363,21 @@ export default class MinecraftBot {
             uuid: uuidStr,
             result: result
           })
-          console.log(`[MC] Resource pack ${label} sent`)
+          this.log(`Resource pack ${label} sent`)
         } catch (err) {
-          console.error(`[MC] Resource pack ${label} failed:`, (err as Error).message)
+          this.error(`Resource pack ${label} failed:`, (err as Error).message)
         }
       }
 
       if (packKey) {
         this.acceptedResourcePacks.add(packKey)
       }
-      console.log('[MC] Resource pack response completed')
+      this.log('Resource pack response completed')
 
       // 资源包过后若一直不 spawn（卡在配置阶段），强制重连
       this._armSpawnTimeout()
     } catch (err) {
-      console.error('[MC] Resource pack error:', (err as Error).message)
+      this.error('Resource pack error:', (err as Error).message)
     }
   }
 
@@ -363,7 +388,7 @@ export default class MinecraftBot {
     this.spawnTimeoutTimer = setTimeout(() => {
       this.spawnTimeoutTimer = null
       if (this.bot !== bot || this.isReady) return
-      console.log(`[MC] Spawn timeout (${this.spawnTimeoutMs / 1000}s), forcing reconnect...`)
+      this.log(`Spawn timeout (${this.spawnTimeoutMs / 1000}s), forcing reconnect...`)
       this.acceptedResourcePacks.clear()
       try { this.bot?.end('spawn timeout') } catch { /* ignore */ }
       this._handleReconnect('spawn超时')
@@ -414,17 +439,17 @@ export default class MinecraftBot {
       ? this.spamReconnectDelay
       : (authFailure ? this.authReconnectDelay : this.reconnectDelay)
 
-    console.log(`[MC] ${reason} - 等待 ${delay / 1000} 秒后重连...`)
+    this.log(`${reason} - 等待 ${delay / 1000} 秒后重连...`)
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       this.reconnectScheduled = false
       if (this.intentionallyStopping) return
-      console.log('[MC] Reconnecting...')
+      this.log('Reconnecting...')
       try {
         this.create()
       } catch (err) {
-        console.error('[MC] 重连创建失败:', (err as Error).message)
+        this.error('重连创建失败:', (err as Error).message)
         this._handleReconnect('重连创建失败', authFailure)
       }
     }, delay)

@@ -8,10 +8,12 @@ export default class MessageQueue {
   private maxSize: number
   private delayMs: number
   private bot: MinecraftBot | null = null
+  private logTag = '[Queue]'
 
-  constructor (options: Partial<MessageQueueConfig> = {}) {
+  constructor (options: Partial<MessageQueueConfig> = {}, botId?: string) {
     this.maxSize = options.maxSize ?? 100
     this.delayMs = options.delayMs ?? 1000
+    if (botId) this.logTag = `[Bot:${botId}]`
   }
 
   setBot (bot: MinecraftBot): void {
@@ -22,7 +24,7 @@ export default class MessageQueue {
     if (!message || !message.trim()) return
 
     if (this.queue.length >= this.maxSize) {
-      console.warn(`[Queue] 队列已满 (${this.maxSize})，丢弃消息: ${message}`)
+      console.warn(`${this.logTag} 队列已满 (${this.maxSize})，丢弃消息: ${message}`)
       return
     }
 
@@ -61,12 +63,12 @@ export default class MessageQueue {
       try {
         if (this.bot?.chat) {
           this.bot.chat(task.message)
-          console.log(`[Queue] 发送消息: ${task.message} (来自: ${task.sender || '系统'})`)
+          console.log(`${this.logTag} 发送消息: ${task.message} (来自: ${task.sender || '系统'})`)
         } else {
-          console.warn('[Queue] Bot未就绪，消息丢弃:', task.message)
+          console.warn(`${this.logTag} Bot未就绪，消息丢弃:`, task.message)
         }
       } catch (error) {
-        console.error('[Queue] 发送消息失败:', error)
+        console.error(`${this.logTag} 发送消息失败:`, error)
       }
 
       this.isProcessing = false
@@ -80,7 +82,7 @@ export default class MessageQueue {
 
   clear (): void {
     this.queue = []
-    console.log('[Queue] 队列已清空')
+    console.log(`${this.logTag} 队列已清空`)
   }
 
   getStatus (): QueueStatus {

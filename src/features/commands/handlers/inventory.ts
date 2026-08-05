@@ -1,155 +1,15 @@
 import type { CommandSource } from '../parser'
 import type { CommandContext } from './types'
-import { getTargetContainerBlock } from '../../container/utils'
 
-export async function handleContainer (
-  ctx: CommandContext,
-  username: string,
-  parts: string[],
-  source: CommandSource
-): Promise<void> {
-  const sub = (parts.shift() || '').toLowerCase()
-  switch (sub) {
-    case 'add':
-      await handleContainerAdd(ctx, username, parts[0], source)
-      break
-    case 'remove':
-      await handleContainerRemove(ctx, username, parts[0], source)
-      break
-    case 'list':
-      await handleContainerList(ctx, username, source)
-      break
-    case 'info':
-      await handleContainerInfo(ctx, username, parts[0], source)
-      break
-    default:
-      await ctx.reply(username, [
-        ctx.messages.text('containerAddUsage'),
-        ctx.messages.text('containerRemoveUsage'),
-        ctx.messages.text('containerInfoUsage'),
-        'container list — 列出容器'
-      ].join('\n'), source)
-  }
-}
-
-async function handleContainerAdd (
-  ctx: CommandContext,
-  username: string,
-  alias: string | undefined,
-  source: CommandSource
-): Promise<void> {
-  if (!ctx.isAdmin(username)) {
-    await ctx.reply(username, ctx.messages.text('noPermission'), source)
-    return
-  }
-  if (!alias) {
-    await ctx.reply(username, ctx.messages.text('containerAddUsage'), source)
-    return
-  }
-
-  const bot = ctx.mcBot.bot
-  if (!bot) {
-    await ctx.reply(username, ctx.messages.text('containerNoTarget'), source)
-    return
-  }
-
-  const target = getTargetContainerBlock(bot)
-  if (!target) {
-    await ctx.reply(username, ctx.messages.text('containerNoTarget'), source)
-    return
-  }
-
-  const pos = target.block.position
-  ctx.containerRegistry.add({
-    alias,
-    type: target.type,
-    x: pos.x,
-    y: pos.y,
-    z: pos.z,
-    dimension: bot.game?.dimension || 'overworld',
-    addedBy: username
-  })
-
-  await ctx.reply(username, ctx.messages.text('containerAddSuccess', {
-    alias,
-    type: target.type,
-    x: pos.x,
-    y: pos.y,
-    z: pos.z
-  }), source)
-}
-
-async function handleContainerRemove (
-  ctx: CommandContext,
-  username: string,
-  alias: string | undefined,
-  source: CommandSource
-): Promise<void> {
-  if (!ctx.isAdmin(username)) {
-    await ctx.reply(username, ctx.messages.text('noPermission'), source)
-    return
-  }
-  if (!alias) {
-    await ctx.reply(username, ctx.messages.text('containerRemoveUsage'), source)
-    return
-  }
-  if (!ctx.containerRegistry.remove(alias)) {
-    await ctx.reply(username, ctx.messages.text('containerRemoveNotFound', { alias }), source)
-    return
-  }
-  await ctx.reply(username, ctx.messages.text('containerRemoveSuccess', { alias }), source)
-}
-
-async function handleContainerList (
-  ctx: CommandContext,
-  username: string,
-  source: CommandSource
-): Promise<void> {
-  const list = ctx.containerRegistry.list()
-  if (list.length === 0) {
-    await ctx.reply(username, ctx.messages.text('containerListEmpty'), source)
-    return
-  }
-
-  const lines = [
-    ctx.messages.text('containerListHeader', { count: list.length }),
-    ...list.map(c => ctx.messages.text('containerListEntry', {
-      alias: c.alias,
-      type: c.type,
-      x: c.x,
-      y: c.y,
-      z: c.z
-    }))
-  ]
-  await ctx.reply(username, lines.join('\n'), source)
-}
-
-async function handleContainerInfo (
-  ctx: CommandContext,
-  username: string,
-  alias: string | undefined,
-  source: CommandSource
-): Promise<void> {
-  if (!alias) {
-    await ctx.reply(username, ctx.messages.text('containerInfoUsage'), source)
-    return
-  }
-  const info = ctx.containerRegistry.get(alias)
-  if (!info) {
-    await ctx.reply(username, ctx.messages.text('containerInfoNotFound', { alias }), source)
-    return
-  }
-  const lines = ctx.messages.lines('containerInfoLines', {
-    alias: info.alias,
-    type: info.type,
-    x: info.x,
-    y: info.y,
-    z: info.z,
-    dimension: info.dimension,
-    addedBy: info.addedBy,
-    date: info.addedAt.slice(0, 10)
-  })
-  await ctx.reply(username, lines.join('\n'), source)
+function isAllowedByDedicatedContainer (
+  itemQuery: string,
+  isDedicated: boolean | null,
+  itemId: string | null
+): boolean {
+  if (!isDedicated) return true
+  const query = itemQuery.toLowerCase().replace(/^minecraft:/, '')
+  const dedicatedItem = (itemId || '').toLowerCase().replace(/^minecraft:/, '')
+  return query === dedicatedItem
 }
 
 export async function handleInv (
@@ -192,9 +52,16 @@ export async function handleStore (
     return
   }
 
-  const record = ctx.containerRegistry.get(alias)
+  const record = ctx.blockRegistry.getContainer(alias)
   if (!record) {
-    await ctx.reply(username, ctx.messages.text('containerInfoNotFound', { alias }), source)
+    await ctx.reply(username, ctx.messages.text('nodeContainerNotFound', { alias }), source)
+    return
+  }
+  if (!isAllowedByDedicatedContainer(itemQuery, record.isDedicated, record.itemId)) {
+    await ctx.reply(username, ctx.messages.text('dedicatedContainerMismatch', {
+      alias,
+      itemId: record.itemId ?? '-'
+    }), source)
     return
   }
 
@@ -227,9 +94,16 @@ export async function handleTake (
     return
   }
 
-  const record = ctx.containerRegistry.get(alias)
+  const record = ctx.blockRegistry.getContainer(alias)
   if (!record) {
-    await ctx.reply(username, ctx.messages.text('containerInfoNotFound', { alias }), source)
+    await ctx.reply(username, ctx.messages.text('nodeContainerNotFound', { alias }), source)
+    return
+  }
+  if (!isAllowedByDedicatedContainer(itemQuery, record.isDedicated, record.itemId)) {
+    await ctx.reply(username, ctx.messages.text('dedicatedContainerMismatch', {
+      alias,
+      itemId: record.itemId ?? '-'
+    }), source)
     return
   }
 

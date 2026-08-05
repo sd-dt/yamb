@@ -22,7 +22,7 @@ export function parsePrefixedArgs (text: string, prefix: string): string[] {
 
 export const KNOWN_COMMANDS = new Set([
   'phome', 'lock', 'unlock', 'add', 'remove', 'status', 'say', 'forward',
-  'help', '帮助', 'mount', 'unmount', 'cart', 'attack', 'container',
+  'help', '帮助', 'mount', 'unmount', 'cart', 'attack', 'node', 'brew',
   'inv', 'store', 'take', 'drop'
 ])
 
