@@ -383,6 +383,20 @@ function listBotFiles (): string[] {
     .sort()
 }
 
+// ── yamb-plus 凭据接口 ─────────────────────────────────────
+// 微软登录等凭据独立存放：config/credentials.yaml（gitignore，勿提交！）
+//   <bot_id>:
+//     username: <MC 用户名>
+//     password: <可选>
+//     auth: microsoft | offline（可选）
+// 文件不存在时完全沿用上游行为（只读 bots/*.yaml 的 account 段）。
+// 路径可用环境变量 YAMB_CREDENTIALS_FILE 覆盖。
+function readCredentials (): Record<string, { username?: string, password?: string, auth?: string }> {
+  const file = process.env.YAMB_CREDENTIALS_FILE || path.join(CONFIG_DIR, 'credentials.yaml')
+  if (!fs.existsSync(file)) return {}
+  return readYaml<Record<string, { username?: string, password?: string, auth?: string }>>(file) ?? {}
+}
+
 function buildBotConfig (
   shared: SharedEnvConfig,
   game: GameDefaults,
@@ -396,14 +410,16 @@ function buildBotConfig (
     process.exit(1)
   }
 
-  const username = raw.account?.username?.trim()
+  // yamb-plus: 凭据接口 —— credentials.yaml[id] 覆盖 bots yaml 的 account 段
+  const cred = readCredentials()[id]
+  const username = (cred?.username?.trim()) || raw.account?.username?.trim()
   if (!username) {
-    console.error(`[Config] Bot "${id}" missing account.username`)
+    console.error(`[Config] Bot "${id}" missing account.username (bots yaml account section or credentials.yaml)`)
     process.exit(1)
   }
 
-  const password = raw.account?.password?.trim() || undefined
-  const auth = raw.account?.auth || 'microsoft'
+  const password = (cred?.password?.trim()) || raw.account?.password?.trim() || undefined
+  const auth = cred?.auth || raw.account?.auth || 'microsoft'
   const subdir = raw.account?.profilesSubdir?.trim()
   const profilesFolder = subdir
     ? path.join(shared.profilesFolder, subdir)
@@ -522,6 +538,22 @@ export function loadEnabledBotConfigs (): AppConfig[] {
   }
 
   return configs
+}
+
+/**
+ * 按账号名（= config/bots/<name>.yaml 的文件名）加载单个 bot 配置（_p65）。
+ * 供运行时"热上号"使用：无论 enabled 标记是什么都把配置读出来，
+ * 是否允许启动由调用方根据 enabled 判断。
+ */
+export function loadBotConfigById (name: string): { config: AppConfig, enabled: boolean } | null {
+  const id = String(name || '').trim()
+  if (!id || id.includes('/') || id.includes('\\') || id.includes('..')) return null
+  const filePath = path.join(BOTS_CONFIG_DIR, `${id}.yaml`)
+  const raw = readYaml<BotFileConfig>(filePath)
+  if (!raw) return null
+  const config = buildBotConfig(loadSharedEnv(), loadGameDefaults(), filePath, raw)
+  validateBotConfig(config)
+  return { config, enabled: raw.enabled === true }
 }
 
 export function validateBotConfig (config: AppConfig): void {

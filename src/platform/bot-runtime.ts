@@ -1,3 +1,4 @@
+import fs from 'fs'
 import type { AppConfig } from '../types'
 import type { DatabaseSync } from '../platform/database'
 import { initDatabase, migrateFromJson } from '../platform/database'
@@ -70,6 +71,20 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
   }, config.id)
   mcBot.setMessageQueue(messageQueue)
 
+  // 记录机器人发出的每条消息，供 mcbot 控制器读取（这样回执不必刷公屏）
+  const outgoingLog = resolveDataPath('./outgoing.log')
+  const mcBotAny = mcBot as unknown as { chat: (text: string) => boolean, whisper: (name: string, text: string) => boolean }
+  const origChat = mcBotAny.chat.bind(mcBotAny)
+  mcBotAny.chat = (text: string): boolean => {
+    try { fs.appendFileSync(outgoingLog, Date.now() + String.fromCharCode(9) + String(text) + String.fromCharCode(10)) } catch (e) { /* 忽略 */ }
+    return origChat(text)
+  }
+  const origWhisper = mcBotAny.whisper.bind(mcBotAny)
+  mcBotAny.whisper = (name: string, text: string): boolean => {
+    try { fs.appendFileSync(outgoingLog, Date.now() + String.fromCharCode(9) + '/msg ' + name + ' ' + String(text) + String.fromCharCode(10)) } catch (e) { }
+    return origWhisper(name, text)
+  }
+
   const systemBuffer = new SystemMessageBuffer()
   const botState = new BotState()
   const standbyManager = new StandbyManager(mcBot, config.bot)
@@ -136,6 +151,11 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
     config.bot,
     config.adminList
   )
+  // 让 mcbot 控制器能通过 HTTP 把指令注入 yamb 的指令系统
+  gameApiService.setCommandInvoker((sender, text) => {
+    void commandHandler.handle(sender, text, 'chat')
+  })
+
   const teleportHandler = new TeleportIncomingHandler(
     teleportService,
     whitelist,

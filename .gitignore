@@ -10,3 +10,6 @@ data/
 config/bots/*
 !config/bots/example.yaml
 !config/bots/*.example.yaml
+
+# yamb-plus: 登录凭据，绝不提交
+config/credentials.yaml
