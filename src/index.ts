@@ -1,5 +1,6 @@
 import 'dotenv/config'
-import { loadEnabledBotConfigs, resolveDataPath } from './config/loader'
+import http from 'http'
+import { loadBotConfigById, loadEnabledBotConfigs, resolveDataPath } from './config/loader'
 import { closeDatabase } from './platform/database'
 import { startBotInstance, type BotInstance } from './platform/bot-runtime'
 import { startTui } from './features/tui'
@@ -141,6 +142,102 @@ async function main (): Promise<void> {
     const instance = await startBotInstance(config)
     instances.push(instance)
   }
+
+  // ── _p65: 热上下号控制口 ──────────────────────────────────────────
+  // 只启停"指令点名的账号"，其它在线账号的连接完全不受影响。
+  // 控制口出任何问题都不影响 bot 本体（switch.sh 侧会自动退回整服务重启）。
+  const CONTROL_PORT = (() => {
+    const v = parseInt(process.env.YAMB_CONTROL_PORT || '15199', 10)
+    return Number.isInteger(v) && v > 0 ? v : 15199
+  })()
+
+  const findInstance = (id: string): BotInstance | undefined =>
+    instances.find(i => i.id === id)
+
+  const hotStart = async (id: string): Promise<{ ok: boolean, code: number, message: string }> => {
+    const name = String(id || '').trim()
+    if (!name) return { ok: false, code: 400, message: '缺少 account' }
+    if (findInstance(name)) return { ok: false, code: 409, message: `账号 ${name} 已在运行` }
+    const loaded = loadBotConfigById(name)
+    if (!loaded) return { ok: false, code: 404, message: `找不到 bot 配置：config/bots/${name}.yaml` }
+    if (!loaded.enabled) {
+      return { ok: false, code: 409, message: `账号 ${name} 的 enabled=false（先用 switch.sh set/enable 打开标记）` }
+    }
+    try {
+      const instance = await startBotInstance(loaded.config)
+      instances.push(instance)
+      console.log(`[Main] 热上号完成: ${name}（约 15~25 秒后进服）`)
+      return { ok: true, code: 200, message: `账号 ${name} 正在上线（约 15~25 秒后进服）` }
+    } catch (err) {
+      console.error(`[Main] 热上号失败 ${name}:`, (err as Error).message)
+      return { ok: false, code: 500, message: `上线失败: ${(err as Error).message}` }
+    }
+  }
+
+  const hotStop = (id: string): { ok: boolean, code: number, message: string } => {
+    const name = String(id || '').trim()
+    if (!name) return { ok: false, code: 400, message: '缺少 account' }
+    const instance = findInstance(name)
+    if (!instance) return { ok: false, code: 404, message: `账号 ${name} 当前没有在运行` }
+    try {
+      const idx = instances.indexOf(instance)
+      if (idx >= 0) instances.splice(idx, 1)
+      instance.stop()
+      try { closeDatabase(instance.dbPath) } catch { /* ignore */ }
+      console.log(`[Main] 热下号完成: ${name}`)
+      return { ok: true, code: 200, message: `账号 ${name} 已下线` }
+    } catch (err) {
+      console.error(`[Main] 热下号失败 ${name}:`, (err as Error).message)
+      return { ok: false, code: 500, message: `下线失败: ${(err as Error).message}` }
+    }
+  }
+
+  const controlServer = http.createServer((req, res) => {
+    const url = (req.url || '').split('?')[0]
+    const readBody = async (): Promise<string> => {
+      let data = ''
+      req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      return await new Promise<string>(resolve => req.on('end', () => resolve(data)))
+    }
+    void (async () => {
+      try {
+        const apiKey = process.env.API_KEY || ''
+        if (apiKey && String(req.headers['x-api-key'] || '') !== apiKey) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, message: 'unauthorized' }))
+          return
+        }
+        if (req.method === 'GET' && url === '/api/instances') {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, running: instances.map(i => i.id) }))
+          return
+        }
+        if (req.method === 'POST' && (url === '/api/instances/start' || url === '/api/instances/stop')) {
+          const body = JSON.parse((await readBody()) || '{}') as { account?: string }
+          const r = url.endsWith('/start')
+            ? await hotStart(body.account || '')
+            : hotStop(body.account || '')
+          res.writeHead(r.code, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: r.ok, message: r.message }))
+          return
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, message: 'not found' }))
+      } catch (err) {
+        try {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, message: (err as Error).message }))
+        } catch { /* ignore */ }
+      }
+    })()
+  })
+  controlServer.on('error', (err) => {
+    console.error('[Main] 热上下号控制口启动失败（不影响 bot 运行，switch.sh 会退回整服务重启）:',
+      (err as Error).message)
+  })
+  controlServer.listen(CONTROL_PORT, '127.0.0.1', () => {
+    console.log(`[Main] 热上下号控制口: http://127.0.0.1:${CONTROL_PORT}/api/instances`)
+  })
 
   if (!headless) {
     tui = startTui(instances, { onExit: shutdown })
