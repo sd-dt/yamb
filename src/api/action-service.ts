@@ -55,7 +55,7 @@ export default class ActionService {
         case 'attack': {
           // 不可攻击实体（打了会被服务器 invalid_entity_attacked 踢出）：
           // 玩家头顶的隐姓 AEC 座椅云、经验球、掉落物、弹射物等 —— nearestEntity 必须过滤掉
-          const unattackable = /area_effect_cloud|experience_orb|xp_orb|item_frame|glow_item_frame|painting|leash_knot|lightning_bolt|fishing_bobber|snowball|arrow|spectral_arrow|ender_pearl|egg\b|item\b/
+          const unattackable = /area_effect_cloud|experience_orb|xp_orb|item_frame|glow_item_frame|painting|leash_knot|lightning_bolt|fishing_bobber|snowball|arrow|spectral_arrow|ender_pearl|egg\b|item\b|item_display|block_display|text_display|interaction\b|marker\b/
           const e: any = typeof bot.nearestEntity === 'function'
             ? bot.nearestEntity((c: any) => {
                 if (!c || !c.position) return false
