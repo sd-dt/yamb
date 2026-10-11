@@ -1,5 +1,7 @@
 import type { ServiceResult } from '../types'
+import { sleep } from '../platform/sleep'
 import type MinecraftBot from '../platform/minecraft-bot'
+import { entityLookPoint, isMountedOnPlayer } from '../actions/shared/entity-utils'
 
 /**
  * 无状态动作执行器 —— 一次调用 = 一个动作。
@@ -20,6 +22,7 @@ export interface ActionParams {
   yaw?: number
   pitch?: number
   seconds?: number
+  slot?: number
 }
 
 const CONTROLS = ['forward', 'back', 'left', 'right', 'jump', 'sneak', 'sprint']
@@ -39,7 +42,7 @@ export default class ActionService {
     return { success: false, message }
   }
 
-  execute (act: string, p: ActionParams = {}): ServiceResult {
+  async execute (act: string, p: ActionParams = {}): Promise<ServiceResult> {
     if (!this.mcBot.isReady || !this.mcBot.bot) {
       return this.err('机器人未就绪')
     }
@@ -96,8 +99,32 @@ export default class ActionService {
           if (!name) return this.err('缺目标名：useentity <玩家名>')
           const e: any = (bot.players && bot.players[name] && bot.players[name].entity) || null
           if (!e) return this.err('附近找不到玩家 ' + name)
-          if (typeof bot.useOn === 'function') bot.useOn(e)
-          return this.ok('右键：作用于 ' + name)
+          // 本服"坐头"插件要求空手右键：先清主手，再按 普通 interact / interact_at 各试一次
+          if (typeof bot.unequip === 'function') { try { await bot.unequip('hand') } catch (e2) {} }
+          const attempts: Array<() => any> = []
+          if (typeof bot.activateEntity === 'function') attempts.push(async () => { await bot.activateEntity(e) })
+          if (typeof bot.activateEntityAt === 'function') attempts.push(async () => { await bot.activateEntityAt(e, entityLookPoint(e)) })
+          if (attempts.length === 0) return this.err('mineflayer 缺少实体交互接口（activateEntity）')
+          let mounted = false
+          for (const fn of attempts) {
+            try { await fn() } catch (e2) {}
+            await sleep(500)
+            if (isMountedOnPlayer(bot, name)) { mounted = true; break }
+          }
+          if (mounted) return this.ok('右键成功：已坐上 ' + name + ' 的头顶（主手已清空）')
+          return this.err('右键已发给 ' + name + '（两种 interact 包都试了），但没检测到坐上头顶')
+        }
+
+        case 'slot': {
+          const cur = typeof bot.quickBarSlot === 'number' ? bot.quickBarSlot : 0
+          const heldName = (h: any) => (h ? (h.displayName || h.name) : '空手')
+          if (p.slot === undefined || p.slot === null || isNaN(Number(p.slot))) {
+            return this.ok('当前格子 ' + (cur + 1) + '/9：手持 ' + heldName(bot.heldItem) + '（切格子：slot <1-9>）')
+          }
+          const n = Math.round(Number(p.slot))
+          if (n < 1 || n > 9) return this.err('格子号只能是 1~9（当前在第 ' + (cur + 1) + ' 格）')
+          bot.setQuickBarSlot(n - 1)
+          return this.ok('已切到格子 ' + n + '/9：手持 ' + heldName(bot.heldItem))
         }
 
         case 'jump': {

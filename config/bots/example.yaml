@@ -21,7 +21,8 @@ command:
 helpLines:
   - "游戏内命令帮助"
   - "私聊无需前缀；公屏需 {prefix}（若已开启）"
-  - "phome <传送点> — 传送 ({waypoints})"
+  - "phome <编号|名字> — 传送到指定点（不带参数看编号列表）"
+  - "slot <1-9> — 切换主手格子（管理员）"
   - "mount [游戏名] / unmount / cart — 骑乘 / 下马 / 上车"
   - "lock / lock hover / unlock — 锁定 / 滞空锁定 / 解锁"
   - "node reg/list/info/remove — 管理方块节点（仅管理员）"

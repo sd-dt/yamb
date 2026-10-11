@@ -6,6 +6,7 @@ import {
   approachEntity,
   entityDistance,
   entityLookPoint,
+  getHeadSeatCloud,
   getPlayerEntity,
   isMountedOnPlayer,
   isOnPluginCloudSeat
@@ -126,8 +127,21 @@ export default class PlayerInteractionService {
       const entity = getPlayerEntity(bot, targetName)
       if (!entity) return false
 
-      const lookPoint = entityLookPoint(entity)
-      await bot.activateEntityAt(entity, lookPoint)
+      // 不同坐骑插件监听不同的 interact 包：普通 interact(type0) / interact_at(type2) / 点头顶的 AEC 云
+      // 逐个换着试，每次试完都用 isMountedOnPlayer 实测确认
+      const cloud = getHeadSeatCloud(bot, entity)
+      const candidates: Array<{ label: string; run: () => any }> = []
+      if (typeof bot.activateEntity === 'function') candidates.push({ label: 'interact(玩家)', run: async () => { await bot.activateEntity(entity) } })
+      if (typeof bot.activateEntityAt === 'function') candidates.push({ label: 'interact_at(玩家)', run: async () => { await bot.activateEntityAt(entity, entityLookPoint(entity)) } })
+      if (cloud) {
+        if (typeof bot.activateEntity === 'function') candidates.push({ label: 'interact(头顶云)', run: async () => { await bot.activateEntity(cloud) } })
+        if (typeof bot.activateEntityAt === 'function') candidates.push({ label: 'interact_at(头顶云)', run: async () => { await bot.activateEntityAt(cloud, entityLookPoint(cloud)) } })
+      }
+      if (candidates.length === 0) return false
+      const pick = candidates[(attempt - 1) % candidates.length]
+      try { await pick.run() } catch (e) {
+        console.log('[Interaction] ' + pick.label + ' 发包异常: ' + (e as Error).message)
+      }
       await sleep(500)
 
       if (isMountedOnPlayer(bot, targetName)) {

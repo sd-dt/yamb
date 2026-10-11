@@ -32,16 +32,16 @@ export default function createGameRoutes (gameApiService: GameApiService): Route
     res.json(result)
   })
 
-  router.post('/action', (req: Request, res: Response) => {
+  router.post('/action', async (req: Request, res: Response) => {
     const body = req.body as {
       act?: string, target?: string, dir?: string,
       x?: number, y?: number, z?: number,
-      yaw?: number, pitch?: number, seconds?: number
+      yaw?: number, pitch?: number, seconds?: number, slot?: number
     }
     if (!body || !body.act) {
       return res.status(400).json({ success: false, message: 'Missing act' })
     }
-    const result = gameApiService.action(body.act, body)
+    const result = await gameApiService.action(body.act, body)
     res.json(result)
   })
 

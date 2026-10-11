@@ -143,3 +143,35 @@ export async function handleDrop (
     ? ctx.messages.text('dropSuccess', { message: result.message || '已丢弃' })
     : ctx.messages.text('dropError', { message: result.message || '丢弃失败' }), source)
 }
+
+/** slot [1-9]：切换主手快捷栏格子；不带参数 = 报当前格子和手持物 */
+export async function handleSlot (
+  ctx: CommandContext,
+  username: string,
+  parts: string[],
+  source: CommandSource
+): Promise<void> {
+  if (!ctx.isAdmin(username)) {
+    await ctx.reply(username, ctx.messages.text('noPermission'), source)
+    return
+  }
+  const bot: any = ctx.mcBot.bot
+  if (!ctx.mcBot.isReady || !bot) {
+    await ctx.reply(username, '机器人未就绪', source)
+    return
+  }
+  const heldName = (h: any) => (h ? (h.displayName || h.name) : '空手')
+  const cur = typeof bot.quickBarSlot === 'number' ? bot.quickBarSlot : 0
+  const arg = (parts[0] || '').trim()
+  if (!arg) {
+    await ctx.reply(username, '当前格子 ' + (cur + 1) + '/9：手持 ' + heldName(bot.heldItem) + '（用法：slot <1-9>）', source)
+    return
+  }
+  const n = parseInt(arg, 10)
+  if (isNaN(n) || n < 1 || n > 9) {
+    await ctx.reply(username, '❌ 格子号只能是 1~9', source)
+    return
+  }
+  bot.setQuickBarSlot(n - 1)
+  await ctx.reply(username, '已切到格子 ' + n + '/9：手持 ' + heldName(bot.heldItem), source)
+}

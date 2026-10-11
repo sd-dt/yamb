@@ -7,9 +7,28 @@ export async function handlePhome (
   alias: string | undefined,
   source: CommandSource
 ): Promise<void> {
-  if (!alias) {
-    await ctx.reply(username, ctx.messages.text('phomeUsage', { waypoints: ctx.waypointHint() }), source)
+  const waypoints = ctx.teleportService.listWaypoints()
+
+  // phome / phome help|list：按固定顺序给出编号列表（phome <数字> 的数字就是这里的序号）
+  if (!alias || ['help', 'list', '帮助', '列表'].indexOf(alias.toLowerCase().trim()) >= 0) {
+    if (waypoints.length === 0) {
+      await ctx.reply(username, ctx.messages.text('phomeUsage', { waypoints: ctx.waypointHint() }), source)
+      return
+    }
+    const lines = waypoints.map((w, i) => (i + 1) + '. ' + w.alias + '（' + w.id + '）')
+    await ctx.reply(username, ['传送点列表（用法：phome <编号> 或 phome <名字>）：', ...lines].join('\n'), source)
     return
+  }
+
+  // 纯数字：先按别名精确匹配（兼容本身就是数字的别名），否则按列表序号取第 N 个
+  const key = alias.trim()
+  if (/^\d+$/.test(key) && !ctx.teleportService.resolveWaypointId(key)) {
+    const n = parseInt(key, 10)
+    if (n < 1 || n > waypoints.length) {
+      await ctx.reply(username, '❌ 编号超出范围：1~' + waypoints.length + '（发 phome 看列表）', source)
+      return
+    }
+    alias = waypoints[n - 1].alias
   }
 
   const result = await ctx.teleportService.goToPlayerViaWaypoint(username, alias)

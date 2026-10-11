@@ -56,11 +56,11 @@ export default class GameApiService {
   }
 
   /** 无状态动作：一次调用 = 一个动作（连点由控制器驱动） */
-  action (act: string, params: ActionParams = {}): ServiceResult {
+  async action (act: string, params: ActionParams = {}): Promise<ServiceResult> {
     if (!this.actionService) {
       this.actionService = new ActionService(this.mcBot)
     }
-    const r = this.actionService.execute(act, params)
+    const r = await this.actionService.execute(act, params)
     console.log(`[Action] ${act} -> ${r.success ? 'OK' : 'FAIL'}: ${r.message}`)
     return r
   }

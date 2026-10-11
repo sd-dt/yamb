@@ -82,6 +82,22 @@ export function isOnPluginCloudSeat (bot: Bot): boolean {
   return horizontal < 0.75
 }
 
+/** 找目标玩家头顶的 AEC 座椅（本服坐头插件的载具本体，悬在头顶 ~2 格） */
+export function getHeadSeatCloud (bot: Bot, player: Entity): Entity | null {
+  let best: Entity | null = null
+  let bestDy = Infinity
+  for (const id of Object.keys(bot.entities)) {
+    const e = bot.entities[id]
+    if (!e || !isAreaEffectCloudEntity(e)) continue
+    const horizontal = Math.hypot(e.position.x - player.position.x, e.position.z - player.position.z)
+    const dy = e.position.y - player.position.y
+    if (horizontal < 0.75 && dy > 0.4 && dy < 3) {
+      if (Math.abs(dy - 2.0) < Math.abs(bestDy - 2.0)) { best = e; bestDy = dy }
+    }
+  }
+  return best
+}
+
 function isLockedToPlayerEntity (bot: Bot, player: Entity): boolean {
   const horizontal = Math.hypot(
     bot.entity.position.x - player.position.x,
