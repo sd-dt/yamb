@@ -24,7 +24,7 @@ import {
 } from './parser'
 import { handlePhome, handleLock, handleUnlock } from './handlers/teleport'
 import { handleMount, handleUnmount, handleCart, handleAttack } from './handlers/riding'
-import { handleInv, handleSlot, handleStore, handleTake, handleDrop } from './handlers/inventory'
+import { handleHand, handleInv, handleSlot, handleStore, handleTake, handleDrop } from './handlers/inventory'
 import { handleNode } from './handlers/nodes'
 import { handleAdd, handleRemove, handleSay, handleForward } from './handlers/admin'
 import { handleStatus, handleHelp } from './handlers/info'
@@ -312,6 +312,12 @@ export default class CommandHandler {
         break
       case 'slot':
         await handleSlot(ctx, username, parts, source)
+        break
+      case 'bag':
+        await handleInv(ctx, username, source)
+        break
+      case 'hand':
+        await handleHand(ctx, username, parts, source)
         break
       case 'store':
         await handleStore(ctx, username, parts, source)

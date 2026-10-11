@@ -175,3 +175,43 @@ export async function handleSlot (
   bot.setQuickBarSlot(n - 1)
   await ctx.reply(username, '已切到格子 ' + n + '/9：手持 ' + heldName(bot.heldItem), source)
 }
+
+/** hand [物品名]：查看主手 / 把背包里的物品换到主手（按 name 或显示名匹配） */
+export async function handleHand (
+  ctx: CommandContext,
+  username: string,
+  parts: string[],
+  source: CommandSource
+): Promise<void> {
+  if (!ctx.isAdmin(username)) {
+    await ctx.reply(username, ctx.messages.text('noPermission'), source)
+    return
+  }
+  const bot: any = ctx.mcBot.bot
+  if (!ctx.mcBot.isReady || !bot) {
+    await ctx.reply(username, '机器人未就绪', source)
+    return
+  }
+  const heldName = (h: any) => (h ? (h.displayName || h.name) + (h.count > 1 ? ' x' + h.count : '') : '空手')
+  const query = (parts[0] || '').trim().toLowerCase()
+  if (!query) {
+    await ctx.reply(username, '当前主手：' + heldName(bot.heldItem) + '（用法：hand <物品名>；bag 看背包）', source)
+    return
+  }
+  const q = query.replace(/^minecraft:\//, '').replace(/^minecraft:/, '')
+  const items: any[] = (bot.inventory && typeof bot.inventory.items === 'function') ? bot.inventory.items() : []
+  const hit = items.find((it) => (it.name || '').toLowerCase() === q)
+    || items.find((it) => (it.name || '').toLowerCase().replace(/^minecraft:/, '').indexOf(q) >= 0)
+    || items.find((it) => (it.displayName || '').toLowerCase().indexOf(q) >= 0)
+  if (!hit) {
+    await ctx.reply(username, '❌ 背包里没有匹配「' + query + '」的物品（发 bag 看背包）', source)
+    return
+  }
+  try {
+    await bot.equip(hit, 'hand')
+  } catch (e) {
+    await ctx.reply(username, '❌ 换手失败：' + (e as Error).message, source)
+    return
+  }
+  await ctx.reply(username, '已切换主手：' + heldName(bot.heldItem), source)
+}

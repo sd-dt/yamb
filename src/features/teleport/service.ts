@@ -129,9 +129,9 @@ export default class TeleportService {
   }
 
   listWaypoints (): WaypointConfig[] {
+    // 保持 yaml 配置顺序（= 服务器 /phome list 的顺序），编号映射按这个顺序来
     return [...this.waypointByAlias.entries()]
       .map(([alias, id]) => ({ alias, id }))
-      .sort((a, b) => a.alias.localeCompare(b.alias))
   }
 
   resolveWaypointId (alias: string): string | null {

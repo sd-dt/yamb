@@ -15,7 +15,10 @@ export async function handlePhome (
       await ctx.reply(username, ctx.messages.text('phomeUsage', { waypoints: ctx.waypointHint() }), source)
       return
     }
-    const lines = waypoints.map((w, i) => (i + 1) + '. ' + w.alias + '（' + w.id + '）')
+    const lines = waypoints.map((w, i) => {
+      const label = w.alias === w.id ? w.alias : w.alias + '（' + w.id + '）'
+      return (i + 1) + '. ' + label
+    })
     await ctx.reply(username, ['传送点列表（用法：phome <编号> 或 phome <名字>）：', ...lines].join('\n'), source)
     return
   }
