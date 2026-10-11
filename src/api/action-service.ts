@@ -53,8 +53,22 @@ export default class ActionService {
     try {
       switch (a) {
         case 'attack': {
-          const e: any = typeof bot.nearestEntity === 'function' ? bot.nearestEntity() : null
+          // 不可攻击实体（打了会被服务器 invalid_entity_attacked 踢出）：
+          // 玩家头顶的隐姓 AEC 座椅云、经验球、掉落物、弹射物等 —— nearestEntity 必须过滤掉
+          const unattackable = /area_effect_cloud|experience_orb|xp_orb|item_frame|glow_item_frame|painting|leash_knot|lightning_bolt|fishing_bobber|snowball|arrow|spectral_arrow|ender_pearl|egg\b|item\b/
+          const e: any = typeof bot.nearestEntity === 'function'
+            ? bot.nearestEntity((c: any) => {
+                if (!c || !c.position) return false
+                const n = String(c.name || c.displayName || '').toLowerCase()
+                if (unattackable.test(n)) return false
+                return true
+              })
+            : null
           if (e && e.position) {
+            const dist = bot.entity.position.distanceTo(e.position)
+            if (dist > 3.6) {
+              return this.err('目标太远（' + dist.toFixed(1) + ' 格），已放弃攻击（防 invalid_entity 被踢）')
+            }
             bot.attack(e)
             const name = e.username || e.name || e.displayName || e.type || '目标'
             return this.ok('左键：攻击了 ' + name)
@@ -90,6 +104,10 @@ export default class ActionService {
           if (!name) return this.err('缺目标名：attackentity <玩家名>')
           const e: any = (bot.players && bot.players[name] && bot.players[name].entity) || null
           if (!e) return this.err('附近找不到玩家 ' + name)
+          const dist = bot.entity.position.distanceTo(e.position)
+          if (dist > 3.6) {
+            return this.err(name + ' 太远（' + dist.toFixed(1) + ' 格），已放弃攻击（防 invalid_entity 被踢）')
+          }
           bot.attack(e)
           return this.ok('左键：攻击了 ' + name)
         }
