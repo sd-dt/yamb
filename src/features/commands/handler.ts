@@ -129,6 +129,20 @@ export default class CommandHandler {
     return this.whitelist.isAllowed(username)
   }
 
+  /**
+   * API 注入指令（/api/command）的发送者兜底：QQ 侧不传 sender 时是 'player'，
+   * 不在白名单会被 handle() 静默丢弃。API 有 x-api-key 保护，视为可信——
+   * 回落到「配置管理员里第一个不是机器人自己且在白名单的名字」。
+   */
+  resolveTrustedSender (sender?: string | null): string {
+    const s = (sender || '').trim()
+    if (s && s !== this.mcBot.botId && this.isWhitelisted(s)) return s
+    for (const a of this.adminList) {
+      if (a !== this.mcBot.botId && this.isWhitelisted(a)) return a
+    }
+    return s || 'player'
+  }
+
   private useWhisperReply (source: CommandSource): boolean {
     return this.replyAlwaysWhisper || source === 'whisper'
   }
@@ -143,6 +157,9 @@ export default class CommandHandler {
     if (this.silentMode && !allowInSilentMode) {
       for (const line of lines) {
         console.log(`[Bot:${this.mcBot.botId}][Silent][Reply:${username}] ${line}`)
+        // 静默模式不真发游戏消息，但要在 outgoing.log 留 /msg 痕迹，QQ 侧回捕（captureOutgoing）靠它
+        const logOnly = (this.mcBot as unknown as { logOutgoingOnly?: (text: string) => void }).logOutgoingOnly
+        if (typeof logOnly === 'function') logOnly.call(this.mcBot, '/msg ' + username + ' ' + line)
       }
       return
     }

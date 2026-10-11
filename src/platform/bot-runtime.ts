@@ -84,6 +84,10 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
     try { fs.appendFileSync(outgoingLog, Date.now() + String.fromCharCode(9) + '/msg ' + name + ' ' + String(text) + String.fromCharCode(10)) } catch (e) { }
     return origWhisper(name, text)
   }
+  // 静默模式专用：只往 outgoing.log 留痕（/msg 记录），不真发游戏消息 —— QQ 侧回捕靠它
+  ;(mcBotAny as unknown as { logOutgoingOnly?: (text: string) => void }).logOutgoingOnly = (text: string): void => {
+    try { fs.appendFileSync(outgoingLog, Date.now() + String.fromCharCode(9) + String(text) + String.fromCharCode(10)) } catch (e) { }
+  }
 
   const systemBuffer = new SystemMessageBuffer()
   const botState = new BotState()
@@ -153,7 +157,8 @@ export async function startBotInstance (config: AppConfig): Promise<BotInstance>
   )
   // 让 mcbot 控制器能通过 HTTP 把指令注入 yamb 的指令系统
   gameApiService.setCommandInvoker((sender, text) => {
-    void commandHandler.handle(sender, text, 'chat')
+    // API 注入视为可信：sender 缺失/陌生时回落到配置管理员（否则 handle() 按白名单静默丢弃）
+    void commandHandler.handle(commandHandler.resolveTrustedSender(sender), text, 'chat')
   })
 
   const teleportHandler = new TeleportIncomingHandler(
